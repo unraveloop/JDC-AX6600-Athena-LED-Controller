@@ -19,7 +19,7 @@ jobs:
       run: |
         # 下载适用于 AX6600 (IPQ60xx) 的 SDK (这里使用 OpenWrt 23.05.2 稳定版)
         echo "Downloading SDK..."
-        wget https://downloads.openwrt.org/releases/23.05.2/targets/ipq60xx/generic/openwrt-sdk-23.05.2-ipq60xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+        wget https://downloads.openwrt.org/releases/23.05.5/targets/ipq60xx/generic/openwrt-sdk-23.05.5-ipq60xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
         
         echo "Extracting SDK..."
         tar -xf openwrt-sdk-*.tar.xz
