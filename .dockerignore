@@ -1,9 +1,0 @@
-target/
-output/
-.git/
-.github/
-scripts/
-.gitignore
-README.md
-Dockerfile
-.dockerignore
