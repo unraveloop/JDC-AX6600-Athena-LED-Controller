@@ -67,16 +67,16 @@ jobs:
 
     - name: Organize Artifacts
       run: |
-        mkdir -p output_ipk
-        # 搜索生成的 ipk 文件
-        find sdk/bin/packages -name "luci-app-athena-led_*.ipk" -exec mv {} output_ipk/ \;
-        ls -l output_ipk/
+        mkdir -p output_apk
+        # 搜索生成的 apk 文件
+        find sdk/bin/packages -name "luci-app-athena-led_*.apk" -exec mv {} output_apk/ \;
+        ls -l output_apk/
 
-    - name: Upload IPK to Release
+    - name: Upload APK to Release
       uses: softprops/action-gh-release@v1
       with:
         # 逻辑：优先使用 Release 触发的标签，如果没有（如手动触发），则使用 v1.0.0
         tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
-        files: output_ipk/*.ipk
+        files: output_apk/*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
