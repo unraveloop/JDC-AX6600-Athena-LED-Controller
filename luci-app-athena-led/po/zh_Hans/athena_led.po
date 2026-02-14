@@ -1,0 +1,215 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+# --- 菜单与标题 ---
+msgid "Athena LED"
+msgstr "Athena LED 屏幕"
+
+msgid "Athena LED Display"
+msgstr "Athena LED 屏幕控制"
+
+msgid "Configuration for TM1628 LED Matrix Driver."
+msgstr "配置 TM1628 LED 点阵屏驱动程序。"
+
+msgid "General Settings"
+msgstr "基本设置"
+
+msgid "Service Control"
+msgstr "服务控制"
+
+# --- 基础设置 ---
+msgid "Enable"
+msgstr "启用"
+
+msgid "Loop Duration (s)"
+msgstr "轮播间隔 (秒)"
+
+msgid "Brightness Level (0-7)"
+msgstr "显示亮度 (0-7)"
+
+msgid "Set the display brightness, 0 is darkest, 7 is brightest."
+msgstr "设置屏幕亮度，0 最暗，7 最亮。"
+
+# --- 模块排序 ---
+msgid "Display Order"
+msgstr "显示顺序与模块"
+
+msgid "Drag to reorder modules. Click + to add."
+msgstr "拖动调整顺序，点击 + 添加模块。"
+
+# --- 模块名称 (对应 DynamicList 的选项) ---
+msgid "Date"
+msgstr "日期 (MM-DD)"
+
+msgid "Time (Static)"
+msgstr "时间 (静态)"
+
+msgid "Time (Blink)"
+msgstr "时间 (闪烁)"
+
+msgid "Weather"
+msgstr "天气"
+
+msgid "CPU Load"
+msgstr "CPU 占用率"
+
+msgid "Memory Usage"
+msgstr "内存占用"
+
+msgid "System Uptime"
+msgstr "系统运行时间"
+
+msgid "Temperatures"
+msgstr "温度监控"
+
+msgid "WAN IP"
+msgstr "WAN IP 地址"
+
+msgid "Online Devices"
+msgstr "在线设备数"
+
+msgid "Realtime Speed (RX)"
+msgstr "实时下载速度"
+
+msgid "Realtime Speed (TX)"
+msgstr "实时上传速度"
+
+msgid "Total Traffic (RX)"
+msgstr "总下载流量"
+
+msgid "Total Traffic (TX)"
+msgstr "总上传流量"
+
+msgid "Custom Banner"
+msgstr "自定义文本"
+
+msgid "Custom HTTP Content"
+msgstr "HTTP 远程内容"
+
+msgid "Stock/Trend"
+msgstr "股票/趋势"
+
+# --- 网络设置 ---
+msgid "Network Settings"
+msgstr "网络监控设置"
+
+msgid "Network Interface"
+msgstr "监控网口"
+
+msgid "Interface for traffic monitoring (e.g. br-lan, eth0)."
+msgstr "用于流量和网速监控的接口 (如 br-lan, eth0)。"
+
+msgid "WAN IP API URL"
+msgstr "WAN IP 查询接口"
+
+msgid "URL to fetch public IP (e.g. http://checkip.amazonaws.com)."
+msgstr "获取公网 IP 的地址 (例如 http://checkip.amazonaws.com)。"
+
+# --- 天气设置 ---
+msgid "Weather Settings"
+msgstr "天气设置"
+
+msgid "City Name"
+msgstr "城市名称"
+
+msgid "Use Pinyin (e.g. Shenzhen) or English."
+msgstr "请使用拼音 (如 Shenzhen) 或英文。"
+
+msgid "Weather Source"
+msgstr "天气数据源"
+
+msgid "Open-Meteo"
+msgstr "Open-Meteo (推荐)"
+
+msgid "Wttr.in"
+msgstr "Wttr.in"
+
+msgid "Seniverse"
+msgstr "心知天气"
+
+msgid "Uapis"
+msgstr "Uapis (国内)"
+
+msgid "Seniverse Key"
+msgstr "心知天气私钥"
+
+msgid "Required only if using Seniverse."
+msgstr "仅在使用心知天气时填写。"
+
+# --- 传感器与自定义 ---
+msgid "Sensor Settings"
+msgstr "传感器与自定义"
+
+msgid "Temperature Sensors"
+msgstr "温度传感器 (多选)"
+
+msgid "Select multiple sensors to display in loop."
+msgstr "选择需要显示的传感器区域 (可多选)。"
+
+# 传感器具体名称
+msgid "nss-top"
+msgstr "NSS-TOP"
+msgid "nss"
+msgstr "NSS"
+msgid "wcss-phya0"
+msgstr "WCSS-PHYA0"
+msgid "wcss-phya1"
+msgstr "WCSS-PHYA1"
+msgid "cpu"
+msgstr "CPU"
+msgid "lpass"
+msgstr "LPASS"
+msgid "ddrss"
+msgstr "DDRSS"
+
+msgid "Custom Text Content"
+msgstr "自定义文本内容"
+
+msgid "Text to display in 'Custom Banner' module."
+msgstr "在“自定义文本”模块中显示的内容。"
+
+msgid "Custom HTTP URL"
+msgstr "HTTP 请求地址"
+
+msgid "URL to fetch short text content."
+msgstr "用于获取简短文本内容的 HTTP 地址。"
+
+# --- 定时与控制 ---
+msgid "Scheduled Sleep"
+msgstr "定时休眠"
+
+msgid "Sleep Start Time"
+msgstr "休眠开始时间"
+
+msgid "Format: HH:MM (e.g. 23:00)"
+msgstr "格式: HH:MM (例如 23:00)"
+
+msgid "Wake Up Time"
+msgstr "唤醒时间"
+
+msgid "Format: HH:MM (e.g. 07:00)"
+msgstr "格式: HH:MM (例如 07:00)"
+
+msgid "Restart Service"
+msgstr "重启服务"
+
+msgid "Stop Service"
+msgstr "停止服务"
+
+msgid "Force restart the athena-led process."
+msgstr "强制重启 Athena LED 进程。"
+
+msgid "Force stop the process (Config remains enabled)."
+msgstr "强制停止进程 (配置保持启用状态)。"
+
+msgid "Weather Format"
+msgstr "天气显示格式"
+
+msgid "Simple (Icon + Temp)"
+msgstr "精简模式 (图标 + 温度)"
+
+msgid "Full (Original)"
+msgstr "完整模式 (原样显示)"
+
+msgid "Simple mode keeps only the first number to fit screen."
+msgstr "精简模式只保留第一个温度数值，防止屏幕滚动。"

@@ -1,0 +1,36 @@
+config settings 'general'
+	option enabled '0'
+	option duration '5'
+	option light_level '5'
+
+	# 核心：显示顺序
+	# 注意：在 LuCI 保存后，这里可能会变成多行 list display_order '...' 格式，这是正常的
+	option display_order 'banner time temp dev cpu mem ip weather'
+
+	# 网络与接口
+	option net_interface 'br-lan'
+	option wan_ip_custom_url 'http://checkip.amazonaws.com'
+
+	# 自定义内容
+	option custom_content 'Roc-Gateway'
+	option http_url ''
+
+	# 天气设置
+	option weather_city 'Shenzhen'
+	option weather_source 'uapis'
+	option seniverse_key ''
+	# [新增] 天气显示格式: 'simple' 或 'full'
+	option weather_format 'simple'
+
+	# 传感器ID (空格分隔)
+	option temp_sensors '0 1 2 3 4'
+
+	# 定时休眠设置
+	# [新增] 休眠总开关: '0' 关闭, '1' 开启
+	option enable_sleep '0'
+	option off_time '23:00'
+	option on_time '07:00'
+
+    option http_url ''
+    # [新增]
+    option http_length '15'
