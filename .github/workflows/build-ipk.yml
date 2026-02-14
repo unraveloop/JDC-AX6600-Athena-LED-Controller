@@ -9,49 +9,76 @@ jobs:
   build_ipk:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 允许上传文件到 Release
+      contents: write  # 必须有这个权限才能上传文件到 Release
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Prepare OpenWrt SDK
+    - name: Prepare OpenWrt SDK (IPQ807x/Compatible)
       run: |
-        # 下载适用于 AX6600 (IPQ60xx) 的 SDK (这里使用 OpenWrt 23.05.2 稳定版)
-        echo "Downloading SDK..."
-        wget https://downloads.openwrt.org/releases/23.05.5/targets/ipq60xx/generic/openwrt-sdk-23.05.5-ipq60xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+        # ---------------------------------------------------------------------
+        # 使用 OpenWrt 23.05.5 (ipq807x) SDK
+        #以此替代 ipq60xx，因为两者架构均为 aarch64_cortex-a53，且 ipq807x 源更稳定
+        # ---------------------------------------------------------------------
+        BASE_URL="https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
         
-        echo "Extracting SDK..."
-        tar -xf openwrt-sdk-*.tar.xz
-        # 重命名解压后的目录方便后续操作
-        mv openwrt-sdk-* sdk
+        echo "Fetching SDK filename from $BASE_URL..."
         
+        # 1. 动态获取 SDK 文件名 (避免因 GCC 版本号变更导致 404)
+        # 下载 sha256sums -> 筛选包含 "sdk" 和 "Linux-x86_64" 的行 -> 提取文件名
+        SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
+        
+        if [ -z "$SDK_FILE" ]; then
+          echo "Error: Could not find SDK filename from official repo!"
+          exit 1
+        fi
+        
+        echo "Found SDK file: $SDK_FILE"
+        
+        # 2. 下载 SDK
+        wget -q "$BASE_URL/$SDK_FILE"
+        
+        # 3. 解压
+        echo "Extracting..."
+        tar -xf "$SDK_FILE"
+        
+        # 4. 重命名解压后的目录为 'sdk'，方便后续操作
+        # 使用 ls -d 匹配解压出来的文件夹名
+        EXTRACTED_DIR=$(tar -tf "$SDK_FILE" | head -n 1 | cut -f1 -d"/")
+        mv "$EXTRACTED_DIR" sdk
+        
+        echo "SDK prepared successfully!"
+
     - name: Update Feeds & Install Package
       working-directory: ./sdk
       run: |
-        # 更新基础依赖源
+        echo "Updating feeds..."
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         
-        # 将我们的源码链接到 SDK 的 package 目录
-        # 注意：$GITHUB_WORKSPACE 是当前项目根目录
+        # 将你的源码目录链接到 SDK 的 package 目录下
+        echo "Linking package..."
         ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
-        
+
     - name: Compile IPK
       working-directory: ./sdk
       run: |
-        # 预先下载依赖 (这一步会触发 Makefile 去下载你的 Rust tar.gz)
+        # 预先下载依赖 (这一步会触发 Makefile 去 Release 下载你的 Rust tar.gz)
+        # 如果 Release 还没发布好，这一步可能会失败，所以确保先上传了 Rust 包
         make package/luci-app-athena-led/download V=s
         
         # 开始编译
-        # V=s 显示详细日志，-j$(nproc) 使用多核编译
+        echo "Compiling..."
         make package/luci-app-athena-led/compile V=s -j$(nproc)
 
     - name: Find & Organize IPK
       run: |
         mkdir -p output_ipk
         # 查找生成的 ipk 文件并移动到输出目录
+        # 注意：ipq807x SDK 生成的路径通常包含 aarch64_cortex-a53
         find sdk/bin/packages -name "luci-app-athena-led_*.ipk" -exec mv {} output_ipk/ \;
+        
         echo "Found IPK files:"
         ls -l output_ipk/
 
