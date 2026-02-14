@@ -64,12 +64,18 @@ jobs:
     - name: Compile IPK
       working-directory: ./sdk
       run: |
-        # 预先下载依赖 (这一步会触发 Makefile 去 Release 下载你的 Rust tar.gz)
-        # 如果 Release 还没发布好，这一步可能会失败，所以确保先上传了 Rust 包
+        # 1. 【关键修改】强制在 SDK 配置中启用我们的插件 (设置为 m 代表编译为模块)
+        echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
+        
+        # 2. 补全依赖配置 (这一步会根据上面的 .config 自动处理所有依赖关系)
+        make defconfig
+        
+        # 3. 预先下载依赖 (这一步会根据 Makefile 去你的 Release 页面下载 Rust 包)
+        echo "Downloading dependencies..."
         make package/luci-app-athena-led/download V=s
         
-        # 开始编译
-        echo "Compiling..."
+        # 4. 执行真正的编译工作
+        echo "Compiling luci-app-athena-led..."
         make package/luci-app-athena-led/compile V=s -j$(nproc)
 
     - name: Find & Organize IPK
