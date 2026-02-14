@@ -100,7 +100,7 @@ This project is built upon the excellent work of the following authors. We deepl
 * **LuCI App**: [haipengno1/luci-app-athena-led](https://github.com/haipengno1/luci-app-athena-led)
     * *Adapted the LuCI app for the Rust version.* (适配 Rust 版本的界面)
 
-### 3. Extended Version (Yi Liu & Team)
+### 3. Extended Version (unraveloop)
 * **Current Fork**: This repository integrates and enhances the above projects.
     * *Implemented Real-time Network Speed (Up/Down), ARP Device Count, WAN IP, System Load (CPU/RAM), Weather Integration, Zero-Load Precision Sleep, and Stability Fixes.*
     * *实现了实时网速(上下行)、在线设备数、WAN IP、系统负载(CPU/内存)、天气集成、零负载精准休眠及稳定性修复。*
