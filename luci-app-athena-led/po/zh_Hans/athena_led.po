@@ -1,215 +1,209 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-# --- 菜单与标题 ---
-msgid "Athena LED"
-msgstr "Athena LED 屏幕"
+# 标题与描述
+msgid "Athena LED Controller"
+msgstr "雅典娜 LED 控制器"
 
-msgid "Athena LED Display"
-msgstr "Athena LED 屏幕控制"
+msgid "JDCloud AX6600 LED Screen Ctrl"
+msgstr "京东云 AX6600 点阵屏控制"
 
-msgid "Configuration for TM1628 LED Matrix Driver."
-msgstr "配置 TM1628 LED 点阵屏驱动程序。"
-
+# 板块 1: 基础设置
 msgid "General Settings"
-msgstr "基本设置"
+msgstr "基础设置"
 
-msgid "Service Control"
-msgstr "服务控制"
-
-# --- 基础设置 ---
-msgid "Enable"
+msgid "Enabled"
 msgstr "启用"
 
-msgid "Loop Duration (s)"
+msgid "Brightness Level"
+msgstr "屏幕亮度"
+
+msgid "Adjust brightness (0-7)."
+msgstr "调节屏幕亮度 (0-7)。"
+
+msgid "Loop Interval (s)"
 msgstr "轮播间隔 (秒)"
 
-msgid "Brightness Level (0-7)"
-msgstr "显示亮度 (0-7)"
+msgid "Time in seconds to display each module."
+msgstr "每个模块显示的持续时间（秒）。"
 
-msgid "Set the display brightness, 0 is darkest, 7 is brightest."
-msgstr "设置屏幕亮度，0 最暗，7 最亮。"
+msgid "Display Order & Modules"
+msgstr "显示模块与顺序"
 
-# --- 模块排序 ---
-msgid "Display Order"
-msgstr "显示顺序与模块"
+msgid "Add modules and drag to reorder."
+msgstr "添加模块并拖拽调整显示顺序。"
 
-msgid "Drag to reorder modules. Click + to add."
-msgstr "拖动调整顺序，点击 + 添加模块。"
-
-# --- 模块名称 (对应 DynamicList 的选项) ---
-msgid "Date"
+# 模块名称
+msgid "Date (MM-DD)"
 msgstr "日期 (MM-DD)"
 
-msgid "Time (Static)"
-msgstr "时间 (静态)"
+msgid "Time (HH:MM)"
+msgstr "时间 (HH:MM)"
 
 msgid "Time (Blink)"
-msgstr "时间 (闪烁)"
-
-msgid "Weather"
-msgstr "天气"
-
-msgid "CPU Load"
-msgstr "CPU 占用率"
-
-msgid "Memory Usage"
-msgstr "内存占用"
+msgstr "时间 (闪烁效果)"
 
 msgid "System Uptime"
 msgstr "系统运行时间"
 
+msgid "Weather"
+msgstr "当地天气"
+
+msgid "CPU Load"
+msgstr "CPU 占用率"
+
+msgid "RAM Usage"
+msgstr "内存占用率"
+
 msgid "Temperatures"
-msgstr "温度监控"
+msgstr "系统温度"
 
 msgid "WAN IP"
-msgstr "WAN IP 地址"
+msgstr "公网 IP"
 
-msgid "Online Devices"
-msgstr "在线设备数"
+msgid "Online Devices (ARP)"
+msgstr "在线设备数 (ARP)"
 
 msgid "Realtime Speed (RX)"
-msgstr "实时下载速度"
+msgstr "实时下载速度 (RX)"
 
 msgid "Realtime Speed (TX)"
-msgstr "实时上传速度"
+msgstr "实时上传速度 (TX)"
 
 msgid "Total Traffic (RX)"
-msgstr "总下载流量"
+msgstr "总下载流量 (RX)"
 
 msgid "Total Traffic (TX)"
-msgstr "总上传流量"
+msgstr "总上传流量 (TX)"
 
-msgid "Custom Banner"
+msgid "Custom Text"
 msgstr "自定义文本"
 
-msgid "Custom HTTP Content"
-msgstr "HTTP 远程内容"
+msgid "HTTP Request Result"
+msgstr "HTTP 请求结果"
 
-msgid "Stock/Trend"
-msgstr "股票/趋势"
-
-# --- 网络设置 ---
+# 板块 2: 网络设置
 msgid "Network Settings"
-msgstr "网络监控设置"
+msgstr "网络设置"
 
 msgid "Network Interface"
-msgstr "监控网口"
+msgstr "网络接口"
 
-msgid "Interface for traffic monitoring (e.g. br-lan, eth0)."
-msgstr "用于流量和网速监控的接口 (如 br-lan, eth0)。"
+msgid "Interface for traffic monitoring (e.g. br-lan)."
+msgstr "用于流量监控的接口 (例如 br-lan)。"
 
-msgid "WAN IP API URL"
+msgid "WAN IP API"
 msgstr "WAN IP 查询接口"
 
-msgid "URL to fetch public IP (e.g. http://checkip.amazonaws.com)."
-msgstr "获取公网 IP 的地址 (例如 http://checkip.amazonaws.com)。"
+msgid "Select a preset or enter custom URL."
+msgstr "选择预设或输入自定义 URL。"
 
-# --- 天气设置 ---
-msgid "Weather Settings"
-msgstr "天气设置"
+# 板块 3: 传感器与天气
+msgid "Sensor & Weather"
+msgstr "传感器与天气"
 
-msgid "City Name"
-msgstr "城市名称"
+msgid "Temperature Sensors"
+msgstr "温度传感器"
 
-msgid "Use Pinyin (e.g. Shenzhen) or English."
-msgstr "请使用拼音 (如 Shenzhen) 或英文。"
+msgid "Select sensors to cycle through."
+msgstr "选择需要轮播显示的传感器。"
+
+# 传感器名称 (保持原名或简单翻译)
+msgid "nss-top"
+msgstr "NSS-Top"
+
+msgid "nss"
+msgstr "NSS"
+
+msgid "wcss-phya0"
+msgstr "无线 PHY0"
+
+msgid "wcss-phya1"
+msgstr "无线 PHY1"
+
+msgid "cpu"
+msgstr "CPU"
+
+msgid "lpass"
+msgstr "LPASS"
+
+msgid "ddrss"
+msgstr "DDR 内存"
 
 msgid "Weather Source"
 msgstr "天气数据源"
 
-msgid "Open-Meteo"
-msgstr "Open-Meteo (推荐)"
+msgid "City Name"
+msgstr "城市名称"
 
-msgid "Wttr.in"
-msgstr "Wttr.in"
-
-msgid "Seniverse"
-msgstr "心知天气"
-
-msgid "Uapis"
-msgstr "Uapis (国内)"
-
-msgid "Seniverse Key"
-msgstr "心知天气私钥"
-
-msgid "Required only if using Seniverse."
-msgstr "仅在使用心知天气时填写。"
-
-# --- 传感器与自定义 ---
-msgid "Sensor Settings"
-msgstr "传感器与自定义"
-
-msgid "Temperature Sensors"
-msgstr "温度传感器 (多选)"
-
-msgid "Select multiple sensors to display in loop."
-msgstr "选择需要显示的传感器区域 (可多选)。"
-
-# 传感器具体名称
-msgid "nss-top"
-msgstr "NSS-TOP"
-msgid "nss"
-msgstr "NSS"
-msgid "wcss-phya0"
-msgstr "WCSS-PHYA0"
-msgid "wcss-phya1"
-msgstr "WCSS-PHYA1"
-msgid "cpu"
-msgstr "CPU"
-msgid "lpass"
-msgstr "LPASS"
-msgid "ddrss"
-msgstr "DDRSS"
-
-msgid "Custom Text Content"
-msgstr "自定义文本内容"
-
-msgid "Text to display in 'Custom Banner' module."
-msgstr "在“自定义文本”模块中显示的内容。"
-
-msgid "Custom HTTP URL"
-msgstr "HTTP 请求地址"
-
-msgid "URL to fetch short text content."
-msgstr "用于获取简短文本内容的 HTTP 地址。"
-
-# --- 定时与控制 ---
-msgid "Scheduled Sleep"
-msgstr "定时休眠"
-
-msgid "Sleep Start Time"
-msgstr "休眠开始时间"
-
-msgid "Format: HH:MM (e.g. 23:00)"
-msgstr "格式: HH:MM (例如 23:00)"
-
-msgid "Wake Up Time"
-msgstr "唤醒时间"
-
-msgid "Format: HH:MM (e.g. 07:00)"
-msgstr "格式: HH:MM (例如 07:00)"
-
-msgid "Restart Service"
-msgstr "重启服务"
-
-msgid "Stop Service"
-msgstr "停止服务"
-
-msgid "Force restart the athena-led process."
-msgstr "强制重启 Athena LED 进程。"
-
-msgid "Force stop the process (Config remains enabled)."
-msgstr "强制停止进程 (配置保持启用状态)。"
+msgid "Pinyin or English."
+msgstr "请输入拼音或英文 (如 Beijing)。"
 
 msgid "Weather Format"
 msgstr "天气显示格式"
 
 msgid "Simple (Icon + Temp)"
-msgstr "精简模式 (图标 + 温度)"
+msgstr "简约 (图标+温度)"
 
 msgid "Full (Original)"
-msgstr "完整模式 (原样显示)"
+msgstr "完整 (原始格式)"
 
 msgid "Simple mode keeps only the first number to fit screen."
-msgstr "精简模式只保留第一个温度数值，防止屏幕滚动。"
+msgstr "简约模式只保留首个数字以适应屏幕宽度。"
+
+msgid "Seniverse API Key"
+msgstr "心知天气 API 密钥"
+
+# 板块 4: 自定义内容
+msgid "Custom Content"
+msgstr "自定义内容"
+
+msgid "Effective only when 'Custom Text' is added to Display Order."
+msgstr "仅当“自定义文本”被添加到显示顺序时生效。"
+
+msgid "HTTP Request URL"
+msgstr "HTTP 请求地址"
+
+msgid "Effective only when 'HTTP Request Result' is added to Display Order."
+msgstr "仅当“HTTP 请求结果”被添加到显示顺序时生效。"
+
+msgid "HTTP Max Length"
+msgstr "HTTP 最大显示长度"
+
+msgid "Max characters to display (defaults to 15). Set higher for longer text."
+msgstr "最大显示字符数 (默认 15)。如需显示长文本请调大此值。"
+
+# 板块 5: 定时休眠
+msgid "Scheduled Sleep"
+msgstr "定时休眠"
+
+msgid "Enable Scheduled Sleep"
+msgstr "启用定时休眠"
+
+msgid "Screen Off Time"
+msgstr "屏幕关闭时间"
+
+msgid "HH:MM format (e.g. 23:00)."
+msgstr "HH:MM 格式 (例如 23:00)。"
+
+msgid "Screen On Time"
+msgstr "屏幕开启时间"
+
+msgid "HH:MM format (e.g. 07:00)."
+msgstr "HH:MM 格式 (例如 07:00)。"
+
+# 板块 6: 服务控制
+msgid "Service Control"
+msgstr "服务控制"
+
+msgid "Restart Service"
+msgstr "重启服务"
+
+msgid "Force restart the process immediately."
+msgstr "立即强制重启进程。"
+
+msgid "Stop Service"
+msgstr "停止服务"
+
+msgid "Stop the process (Will restart on reboot if Enabled is checked)."
+msgstr "停止进程 (若“启用”被勾选，重启路由器后会自动启动)。"
