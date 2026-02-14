@@ -1,4 +1,4 @@
-name: Build LuCI IPK
+name: Build LuCI IPK (GitHub Mirror Edition)
 
 on:
   release:
@@ -9,83 +9,67 @@ jobs:
   build_ipk:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 必须有这个权限才能上传文件到 Release
+      contents: write 
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Prepare OpenWrt SDK (IPQ807x/Compatible)
+    - name: Prepare OpenWrt SDK (IPQ807x)
       run: |
-        # ---------------------------------------------------------------------
-        # 使用 OpenWrt 23.05.5 (ipq807x) SDK
-        #以此替代 ipq60xx，因为两者架构均为 aarch64_cortex-a53，且 ipq807x 源更稳定
-        # ---------------------------------------------------------------------
+        # 使用 23.05.5 稳定版 SDK
         BASE_URL="https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
         
-        echo "Fetching SDK filename from $BASE_URL..."
-        
-        # 1. 动态获取 SDK 文件名 (避免因 GCC 版本号变更导致 404)
-        # 下载 sha256sums -> 筛选包含 "sdk" 和 "Linux-x86_64" 的行 -> 提取文件名
+        # 动态获取最新的 SDK 文件名
         SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
         
-        if [ -z "$SDK_FILE" ]; then
-          echo "Error: Could not find SDK filename from official repo!"
-          exit 1
-        fi
-        
-        echo "Found SDK file: $SDK_FILE"
-        
-        # 2. 下载 SDK
+        echo "Downloading SDK: $SDK_FILE"
         wget -q "$BASE_URL/$SDK_FILE"
         
-        # 3. 解压
-        echo "Extracting..."
         tar -xf "$SDK_FILE"
-        
-        # 4. 重命名解压后的目录为 'sdk'，方便后续操作
-        # 使用 ls -d 匹配解压出来的文件夹名
         EXTRACTED_DIR=$(tar -tf "$SDK_FILE" | head -n 1 | cut -f1 -d"/")
         mv "$EXTRACTED_DIR" sdk
-        
-        echo "SDK prepared successfully!"
 
-    - name: Update Feeds & Install Package
+    - name: Switch Feeds to GitHub Mirror
       working-directory: ./sdk
       run: |
-        echo "Updating feeds..."
+        # 将官方 git.openwrt.org 替换为 GitHub 镜像地址，提速 10 倍以上
+        sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' feeds.conf.default
+        sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' feeds.conf.default
+        sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' feeds.conf.default
+        sed -i 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt-routing/packages.git|g' feeds.conf.default
+        sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' feeds.conf.default
+        
+        echo "Feeds switched to GitHub mirrors:"
+        cat feeds.conf.default
+
+    - name: Update & Install Feeds
+      working-directory: ./sdk
+      run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
-        # 将你的源码目录链接到 SDK 的 package 目录下
-        echo "Linking package..."
-        ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
 
-    - name: Compile IPK
+    - name: Configure and Compile
       working-directory: ./sdk
       run: |
-        # 1. 【关键修改】强制在 SDK 配置中启用我们的插件 (设置为 m 代表编译为模块)
+        # 1. 将本地源码放入 SDK
+        ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
+        
+        # 2. 强制启用该插件
         echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
         
-        # 2. 补全依赖配置 (这一步会根据上面的 .config 自动处理所有依赖关系)
+        # 3. 补全依赖并预下载 (这会从你的 Release 页面下载 Rust 二进制)
         make defconfig
-        
-        # 3. 预先下载依赖 (这一步会根据 Makefile 去你的 Release 页面下载 Rust 包)
-        echo "Downloading dependencies..."
         make package/luci-app-athena-led/download V=s
         
-        # 4. 执行真正的编译工作
-        echo "Compiling luci-app-athena-led..."
+        # 4. 编译
         make package/luci-app-athena-led/compile V=s -j$(nproc)
 
-    - name: Find & Organize IPK
+    - name: Organize Artifacts
       run: |
         mkdir -p output_ipk
-        # 查找生成的 ipk 文件并移动到输出目录
-        # 注意：ipq807x SDK 生成的路径通常包含 aarch64_cortex-a53
+        # 搜索生成的 ipk 文件
         find sdk/bin/packages -name "luci-app-athena-led_*.ipk" -exec mv {} output_ipk/ \;
-        
-        echo "Found IPK files:"
         ls -l output_ipk/
 
     - name: Upload IPK to Release
