@@ -74,8 +74,9 @@ jobs:
 
     - name: Upload IPK to Release
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
       with:
+        # 逻辑：优先使用 Release 触发的标签，如果没有（如手动触发），则使用 v1.0.0
+        tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
         files: output_ipk/*.ipk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
