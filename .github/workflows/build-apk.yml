@@ -18,7 +18,7 @@ jobs:
     - name: Prepare OpenWrt SDK (Snapshot-IPQ807x)
       run: |
         # ⚠️ 关键修改：改用 Snapshots 目录获取最新的支持 apk 的 SDK
-        BASE_URL="https://downloads.openwrt.org/snapshots/targets/ipq807x/generic"
+        BASE_URL="https://downloads.openwrt.org/snapshots/targets/ipq806x/generic/"
         SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
         
         echo "Downloading SDK: $SDK_FILE"
