@@ -18,7 +18,7 @@ jobs:
     - name: Prepare OpenWrt SDK (IPQ807x)
       run: |
         # 使用 23.05.5 稳定版 SDK
-        BASE_URL="https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
+        BASE_URL="ASE_URL="https://downloads.openwrt.org/snapshots/targets/ipq807x/generic"
         
         # 动态获取最新的 SDK 文件名
         SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
