@@ -1,0 +1,155 @@
+name: Build Chain (Rust Binary + IPK + APK)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 🟢 第一阶段：编译 Rust 核心二进制
+  build_rust:
+    name: 1. Build Rust Core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. 自动读取版本号 (用于命名)
+      - name: Get Version
+        id: version
+        run: |
+          # 尝试从 Makefile 读取版本号，如果没有则默认 1.0.0
+          PKG_VERSION=$(grep "PKG_VERSION:=" package/luci-app-athena-led/Makefile 2>/dev/null | cut -d"=" -f2 || echo "1.0.0")
+          echo "VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
+
+      # 2. 准备 Rust 环境
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      # 3. 编译 (注意：这里假设源码在 athena-led 目录，且 Edition 是 2021)
+      - name: Compile Rust
+        working-directory: ./athena-led
+        run: |
+          cargo build --release --target aarch64-unknown-linux-musl
+
+      # 4. 打包二进制 (关键：这会生成 athena-led-1.0.0.tar.gz)
+      - name: Package Binary
+        id: package
+        working-directory: ./athena-led
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          FILENAME="athena-led-${VERSION}.tar.gz"
+          
+          mkdir -p dist
+          # 只复制二进制文件，不包含源码
+          cp target/aarch64-unknown-linux-musl/release/athena-led dist/
+          
+          cd dist
+          tar -czvf ../$FILENAME athena-led
+          
+          echo "ASSET_NAME=$FILENAME" >> $GITHUB_OUTPUT
+          echo "✅ Packed binary: $FILENAME"
+
+      # 5. [关键] 上传 Rust 二进制到 Release
+      - name: Upload Rust Binary to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: athena-led/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6. 上传工件 (给后续 OpenWrt 编译任务使用)
+      - name: Pass Artifact to Next Job
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-binary-tarball
+          path: athena-led/*.tar.gz
+          retention-days: 1
+
+  # 🔵 第二阶段：编译 OpenWrt 安装包 (IPK & APK)
+  build_openwrt:
+    name: 2. Build ${{ matrix.type }}
+    needs: build_rust  # 必须等待 Rust 编译完成
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - type: ipk
+            name: Stable (23.05)
+            sdk_url: "https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
+            use_apk: false
+          - type: apk
+            name: Snapshot (Qualcommax)
+            sdk_url: "https://downloads.openwrt.org/snapshots/targets/qualcommax/ipq60xx"
+            use_apk: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. 下载刚才编译好的 Rust 包
+      - name: Download Rust Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binary-tarball
+          path: local_dl/
+
+      # 2. 准备 SDK
+      - name: Prepare SDK
+        run: |
+          sudo apt-get update && sudo apt-get install -y zstd
+          
+          BASE_URL="${{ matrix.sdk_url }}"
+          SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
+          wget -q "$BASE_URL/$SDK_FILE"
+          
+          # 智能解压
+          if [[ "$SDK_FILE" == *.zst ]]; then zstd -d "$SDK_FILE" -o sdk.tar; tar -xf sdk.tar; else tar -xf "$SDK_FILE"; fi
+          EXTRACTED_DIR=$(tar -tf sdk.tar 2>/dev/null || tar -tf "$SDK_FILE" | head -n 1 | cut -f1 -d"/")
+          mv "$EXTRACTED_DIR" sdk
+
+      # 3. 注入 Rust 包到 SDK (跳过下载)
+      - name: Inject Source into SDK
+        run: |
+          mkdir -p sdk/dl
+          cp local_dl/*.tar.gz sdk/dl/
+          echo "✅ Injected Rust binary into sdk/dl/"
+
+      # 4. 更新 Feeds (使用 GitHub 镜像加速)
+      - name: Configure Feeds
+        working-directory: ./sdk
+        run: |
+          sed -i 's|git.openwrt.org/openwrt/openwrt.git|github.com/openwrt/openwrt.git|g' feeds.conf.default
+          sed -i 's|git.openwrt.org/feed/packages.git|github.com/openwrt/packages.git|g' feeds.conf.default
+          sed -i 's|git.openwrt.org/project/luci.git|github.com/openwrt/luci.git|g' feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # 5. 编译 IPK / APK
+      - name: Compile Package
+        working-directory: ./sdk
+        run: |
+          ln -s $GITHUB_WORKSPACE/package/luci-app-athena-led package/luci-app-athena-led
+          
+          echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
+          if [ "${{ matrix.use_apk }}" = "true" ]; then
+             echo "CONFIG_SIGNED_PACKAGES=y" >> .config
+          fi
+          
+          make defconfig
+          # 因为 dl 目录已有文件，这一步会自动跳过下载
+          make package/luci-app-athena-led/download V=s
+          make package/luci-app-athena-led/compile V=s -j$(nproc)
+
+      # 6. [关键] 上传 IPK / APK 到 Release
+      - name: Upload Package to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          # 自动匹配生成的文件后缀
+          files: sdk/bin/**/luci-app-athena-led*.${{ matrix.type }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
