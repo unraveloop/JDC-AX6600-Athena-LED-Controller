@@ -57,7 +57,12 @@ jobs:
         working-directory: ./athena-led
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          FILENAME="athena-led-${VERSION}.tar.gz"
+          # ❌ 原来的写法：可能太简单了
+          # FILENAME="athena-led-${VERSION}.tar.gz"
+          
+          # ✅ 修正后的写法：必须完全匹配 Makefile 里的 PKG_SOURCE
+          # 根据你的报错日志，它需要架构名和 v 前缀
+          FILENAME="athena-led-aarch64-unknown-linux-musl-v${VERSION}.tar.gz"
           
           mkdir -p dist
           cp target/aarch64-unknown-linux-musl/release/athena-led dist/
