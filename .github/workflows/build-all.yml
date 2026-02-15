@@ -19,12 +19,16 @@ jobs:
 
       - name: Prepare SDK (Stable 23.05 - IPQ807x)
         run: |
-          # 23.05 稳定版使用 ipq807x SDK 兼容 AX6600
           BASE_URL="https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
           SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
           wget -q "$BASE_URL/$SDK_FILE"
+          
+          echo "Extracting $SDK_FILE..."
           tar -xf "$SDK_FILE"
-          mv openwrt-sdk-* sdk
+          
+          # ⚠️ 关键修复：精准获取解压后的目录名，不使用通配符
+          EXTRACTED_DIR=$(tar -tf "$SDK_FILE" | head -n 1 | cut -f1 -d"/")
+          mv "$EXTRACTED_DIR" sdk
 
       - name: Configure Feeds (GitHub Mirror)
         working-directory: ./sdk
@@ -48,7 +52,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
-          # 递归搜索所有生成的 ipk
           files: sdk/bin/packages/**/luci-app-athena-led*.ipk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,16 +67,24 @@ jobs:
       - name: Prepare SDK (Snapshot - Qualcommax/IPQ60xx)
         run: |
           sudo apt-get update && sudo apt-get install -y zstd
-          # AX6600 在 Snapshot 中位于 qualcommax/ipq60xx
           BASE_URL="https://downloads.openwrt.org/snapshots/targets/qualcommax/ipq60xx"
           SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
           
           if [ -z "$SDK_FILE" ]; then echo "❌ SDK not found!"; exit 1; fi
           
+          echo "Downloading $SDK_FILE..."
           wget -q "$BASE_URL/$SDK_FILE"
+          
+          echo "Decompressing zstd..."
           zstd -d "$SDK_FILE" -o sdk.tar
+          
+          echo "Extracting tar..."
           tar -xf sdk.tar
-          mv openwrt-sdk-* sdk
+          
+          # ⚠️ 关键修复：从 tar 文件列表中读取目录名
+          EXTRACTED_DIR=$(tar -tf sdk.tar | head -n 1 | cut -f1 -d"/")
+          echo "Renaming $EXTRACTED_DIR to sdk..."
+          mv "$EXTRACTED_DIR" sdk
 
       - name: Configure Feeds (GitHub Mirror)
         working-directory: ./sdk
@@ -89,7 +100,7 @@ jobs:
         run: |
           ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
           echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
-          # 开启签名支持 (apk 必须)
+          # 开启签名支持 (apk 必需)
           echo "CONFIG_SIGNED_PACKAGES=y" >> .config
           make defconfig
           make package/luci-app-athena-led/download V=s
@@ -99,7 +110,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
-          # 递归搜索所有生成的 apk
           files: sdk/bin/**/luci-app-athena-led*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
