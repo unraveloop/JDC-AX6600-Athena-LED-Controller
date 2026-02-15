@@ -21,15 +21,29 @@
 
 ### 📥 安装方法 (推荐)
 
-对于大多数用户，直接下载我们提供的 `.ipk` 安装包即可，无需自行编译。
+请根据您的 OpenWrt 系统版本选择对应的安装方式，无需自行编译。
 
-1.  前往 **[Releases (发行版)](../../releases)** 页面。
-2.  下载最新的 `luci-app-athena-led_*.ipk` 文件。
-3.  上传至路由器 (例如 `/tmp/` 目录) 并执行安装命令：
+#### 🅰️ 方案一：OpenWrt 23.05 及旧版 (使用 `.ipk`)
+适用于大多数目前的稳定版固件。
+
+1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `luci-app-athena-led_*.ipk` 文件。
+2.  上传至路由器 `/tmp/` 目录。
+3.  执行安装命令：
     ```bash
     opkg install /tmp/luci-app-athena-led_*.ipk
     ```
-4.  安装完成后，进入 **服务 -> Athena LED** 进行配置。
+
+#### 🅱️ 方案二：OpenWrt 24.x / Snapshot (使用 `.apk`)
+适用于最新使用 `apk` 包管理器的固件。
+
+1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `luci-app-athena-led_*.apk` 文件。
+2.  上传至路由器 `/tmp/` 目录。
+3.  执行安装命令 (**必须添加 `--allow-untrusted` 参数**)：
+    ```bash
+    apk add --allow-untrusted /tmp/luci-app-athena-led_*.apk
+    ```
+
+🎉 **配置**：安装完成后刷新网页，进入 **服务 (Services) -> Athena LED** 进行配置。
 
 ### 🏗️ 开发者 / 固件编译
 如果您是固件开发者，或者希望从源码编译：
@@ -55,15 +69,29 @@ This project is a heavily modified fork based on `haipengno1` and `NONGFAH`. We 
 
 ### 📥 Installation (Recommended)
 
-For most users, you simply need to install the pre-compiled `.ipk` package.
+Please choose the appropriate installation method based on your OpenWrt version. No compilation is required.
 
-1.  Go to the **[Releases](../../releases)** page.
-2.  Download the latest file named `luci-app-athena-led_*.ipk`.
-3.  Upload it to your router (e.g., to `/tmp/`) and install:
+#### 🅰️ Option 1: OpenWrt 23.05 & Older (Use `.ipk`)
+For current stable releases using `opkg`.
+
+1.  Go to the **[Releases](../../releases)** page and download the latest `luci-app-athena-led_*.ipk` file.
+2.  Upload it to your router's `/tmp/` directory.
+3.  Run the installation command:
     ```bash
     opkg install /tmp/luci-app-athena-led_*.ipk
     ```
-4.  Configure via **Services -> Athena LED**.
+
+#### 🅱️ Option 2: OpenWrt 24.x / Snapshot (Use `.apk`)
+For the latest development snapshots using the new `apk` package manager.
+
+1.  Go to the **[Releases](../../releases)** page and download the latest `luci-app-athena-led_*.apk` file.
+2.  Upload it to your router's `/tmp/` directory.
+3.  Run the installation command (**Must include `--allow-untrusted` flag**):
+    ```bash
+    apk add --allow-untrusted /tmp/luci-app-athena-led_*.apk
+    ```
+
+🎉 **Configuration**: After installation, refresh the web interface and go to **Services -> Athena LED** to configure.
 
 ### 🏗️ For Developers / Custom Firmware
 If you are building your own OpenWrt firmware or want to modify the source:
