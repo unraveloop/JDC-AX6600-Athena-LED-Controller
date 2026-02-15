@@ -20,7 +20,7 @@ jobs:
       - name: Get Version
         id: version
         run: |
-          PKG_VERSION=$(grep "PKG_VERSION:=" package/luci-app-athena-led/Makefile 2>/dev/null | cut -d"=" -f2 || echo "1.0.0")
+          PKG_VERSION=$(grep "PKG_VERSION:=" luci-app-athena-led/Makefile 2>/dev/null | cut -d"=" -f2 || echo "1.0.0")
           echo "VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
 
       # 2. 准备 Rust 环境
@@ -149,7 +149,7 @@ jobs:
       - name: Compile Package
         working-directory: ./sdk
         run: |
-          ln -s $GITHUB_WORKSPACE/package/luci-app-athena-led package/luci-app-athena-led
+          ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
           
           echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
           if [ "${{ matrix.use_apk }}" = "true" ]; then
