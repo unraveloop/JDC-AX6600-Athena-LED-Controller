@@ -17,14 +17,27 @@ jobs:
 
     - name: Prepare OpenWrt SDK (Snapshot-IPQ807x)
       run: |
-        # ⚠️ 关键修改：改用 Snapshots 目录获取最新的支持 apk 的 SDK
-        BASE_URL="https://downloads.openwrt.org/snapshots/targets/ipq806x/generic/"
-        SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
+        # 1. 安装 zstd 解压工具
+        sudo apt-get update && sudo apt-get install -y zstd
         
+        # 2. 修正为 ipq807x (AArch64 兼容架构)
+        BASE_URL="https://downloads.openwrt.org/snapshots/targets/ipq807x/generic"
+        
+        # 3. 获取最新的 .zst SDK 文件名
+        SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
         echo "Downloading SDK: $SDK_FILE"
         wget -q "$BASE_URL/$SDK_FILE"
-        tar -xf "$SDK_FILE"
-        mv openwrt-sdk-* sdk
+        
+        # 4. 使用 zstd 解压
+        echo "Extracting SDK..."
+        zstd -d "$SDK_FILE" -o sdk_archive.tar
+        tar -xf sdk_archive.tar
+        
+        # 5. 稳健地重命名目录
+        EXTRACTED_DIR=$(ls -d openwrt-sdk-*)
+        mv "$EXTRACTED_DIR" sdk
+        
+        echo "SDK prepared successfully!"
 
     - name: Switch Feeds & Update
       working-directory: ./sdk
