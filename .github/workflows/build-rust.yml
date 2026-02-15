@@ -1,4 +1,4 @@
-name: Build Rust Binary (Subdirectory)
+name: Build Rust Binary (Fixed Path)
 
 on:
   release:
@@ -10,11 +10,22 @@ jobs:
     name: Compile Rust (athena-led)
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 允许上传 Release 附件
+      contents: write
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      # 🔍 调试步骤：确认 Cargo.toml 真的存在
+      - name: Verify Directory Structure
+        run: |
+          echo "Listing athena-led directory:"
+          ls -l athena-led/ || echo "❌ Directory not found!"
+          
+          if [ ! -f "athena-led/Cargo.toml" ]; then
+            echo "❌ Error: athena-led/Cargo.toml does not exist."
+            exit 1
+          fi
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -25,29 +36,38 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cross Compile
-        # ⚠️ 关键修改：指定 Rust 项目所在的子目录
-        working-directory: ./athena-led
+        # ⚠️ 关键修复：去掉 working-directory，在根目录运行
+        # 使用 --manifest-path 指向子目录的 Cargo.toml
         run: |
-          echo "Building in $(pwd)..."
-          cross build --release --target aarch64-unknown-linux-musl
+          echo "Building from root using manifest path..."
+          cross build --release --target aarch64-unknown-linux-musl --manifest-path athena-led/Cargo.toml
           
-          # 验证生成的文件 (路径是相对于 athena-led 目录的)
-          ls -l target/aarch64-unknown-linux-musl/release/
+          # 检查生成的文件
+          # 注意：如果 athena-led 是独立项目，target 目录通常会在 athena-led/target
+          # 如果它是 workspace 的一部分，target 可能在根目录 ./target
+          echo "Checking for binary..."
+          find . -name "athena-led" -type f | grep "release"
 
       - name: Compress Binary
-        # 同样指定工作目录，方便路径操作
-        working-directory: ./athena-led
         run: |
-          # 准备打包目录
           mkdir -p dist
           
-          # 复制编译好的二进制文件 (假设你的 crate 名字叫 athena-led)
-          # 如果你的 Cargo.toml 里 name = "xxx"，这里也要改
-          cp target/aarch64-unknown-linux-musl/release/athena-led dist/
+          # 使用 find 命令查找并复制，防止路径猜错
+          # -name 你的二进制名字 (根据 Cargo.toml 里的 package.name，通常是文件夹名 athena-led)
+          BINARY_PATH=$(find athena-led/target -name "athena-led" -type f | grep "aarch64-unknown-linux-musl/release" | head -n 1)
           
-          # 进入 dist 目录打包，避免压缩包里包含长路径
+          if [ -z "$BINARY_PATH" ]; then
+             echo "❌ Build failed or binary not found!"
+             ls -R athena-led/target
+             exit 1
+          fi
+          
+          echo "Found binary at: $BINARY_PATH"
+          cp "$BINARY_PATH" dist/
+          
+          # 打包
           cd dist
-          tar -czvf ../athena-led-aarch64-unknown-linux-musl.tar.gz athena-led
+          tar -czvf athena-led-aarch64-unknown-linux-musl.tar.gz athena-led
           
           echo "📦 Packaging complete!"
 
@@ -55,7 +75,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
-          # 上传 athena-led 目录下的压缩包
-          files: athena-led/athena-led-aarch64-unknown-linux-musl.tar.gz
+          files: dist/athena-led-aarch64-unknown-linux-musl.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
