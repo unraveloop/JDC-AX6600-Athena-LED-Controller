@@ -1,0 +1,61 @@
+name: Build Rust Binary (Subdirectory)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build_rust:
+    name: Compile Rust (athena-led)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许上传 Release 附件
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install Cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cross Compile
+        # ⚠️ 关键修改：指定 Rust 项目所在的子目录
+        working-directory: ./athena-led
+        run: |
+          echo "Building in $(pwd)..."
+          cross build --release --target aarch64-unknown-linux-musl
+          
+          # 验证生成的文件 (路径是相对于 athena-led 目录的)
+          ls -l target/aarch64-unknown-linux-musl/release/
+
+      - name: Compress Binary
+        # 同样指定工作目录，方便路径操作
+        working-directory: ./athena-led
+        run: |
+          # 准备打包目录
+          mkdir -p dist
+          
+          # 复制编译好的二进制文件 (假设你的 crate 名字叫 athena-led)
+          # 如果你的 Cargo.toml 里 name = "xxx"，这里也要改
+          cp target/aarch64-unknown-linux-musl/release/athena-led dist/
+          
+          # 进入 dist 目录打包，避免压缩包里包含长路径
+          cd dist
+          tar -czvf ../athena-led-aarch64-unknown-linux-musl.tar.gz athena-led
+          
+          echo "📦 Packaging complete!"
+
+      - name: Upload Binary to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
+          # 上传 athena-led 目录下的压缩包
+          files: athena-led/athena-led-aarch64-unknown-linux-musl.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
