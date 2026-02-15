@@ -1,0 +1,105 @@
+name: Build All Packages (IPK + APK)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: 
+
+permissions:
+  contents: write
+
+jobs:
+  # 任务一：编译适用于 OpenWrt 23.05 的 .ipk 文件
+  build_stable_ipk:
+    name: Build IPK (OpenWrt 23.05)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Prepare SDK (Stable 23.05 - IPQ807x)
+        run: |
+          # 23.05 稳定版使用 ipq807x SDK 兼容 AX6600
+          BASE_URL="https://downloads.openwrt.org/releases/23.05.5/targets/ipq807x/generic"
+          SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
+          wget -q "$BASE_URL/$SDK_FILE"
+          tar -xf "$SDK_FILE"
+          mv openwrt-sdk-* sdk
+
+      - name: Configure Feeds (GitHub Mirror)
+        working-directory: ./sdk
+        run: |
+          sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' feeds.conf.default
+          sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' feeds.conf.default
+          sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Compile IPK
+        working-directory: ./sdk
+        run: |
+          ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
+          echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
+          make defconfig
+          make package/luci-app-athena-led/download V=s
+          make package/luci-app-athena-led/compile V=s -j$(nproc)
+
+      - name: Upload IPK
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
+          # 递归搜索所有生成的 ipk
+          files: sdk/bin/packages/**/luci-app-athena-led*.ipk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 任务二：编译适用于 OpenWrt Snapshot 的 .apk 文件
+  build_snapshot_apk:
+    name: Build APK (Snapshot Qualcommax)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Prepare SDK (Snapshot - Qualcommax/IPQ60xx)
+        run: |
+          sudo apt-get update && sudo apt-get install -y zstd
+          # AX6600 在 Snapshot 中位于 qualcommax/ipq60xx
+          BASE_URL="https://downloads.openwrt.org/snapshots/targets/qualcommax/ipq60xx"
+          SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
+          
+          if [ -z "$SDK_FILE" ]; then echo "❌ SDK not found!"; exit 1; fi
+          
+          wget -q "$BASE_URL/$SDK_FILE"
+          zstd -d "$SDK_FILE" -o sdk.tar
+          tar -xf sdk.tar
+          mv openwrt-sdk-* sdk
+
+      - name: Configure Feeds (GitHub Mirror)
+        working-directory: ./sdk
+        run: |
+          sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' feeds.conf.default
+          sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' feeds.conf.default
+          sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Compile APK
+        working-directory: ./sdk
+        run: |
+          ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
+          echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
+          # 开启签名支持 (apk 必须)
+          echo "CONFIG_SIGNED_PACKAGES=y" >> .config
+          make defconfig
+          make package/luci-app-athena-led/download V=s
+          make package/luci-app-athena-led/compile V=s -j$(nproc)
+
+      - name: Upload APK
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.release.tag_name || 'v1.0.0' }}
+          # 递归搜索所有生成的 apk
+          files: sdk/bin/**/luci-app-athena-led*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
