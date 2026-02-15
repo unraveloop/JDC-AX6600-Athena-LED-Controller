@@ -16,8 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. 🔍 [智能修复] 自动查找 Makefile 读取版本号
-      # 不再写死路径，兼容根目录或子目录结构
+      # 1. 自动查找 Makefile 读取版本号
       - name: Get Version
         id: version
         run: |
@@ -51,17 +50,14 @@ jobs:
         run: |
           cargo zigbuild --release --target aarch64-unknown-linux-musl
 
-      # 5. 打包二进制
+      # 5. 打包二进制 (这里是关键！强制使用长文件名)
       - name: Package Binary
         id: package
         working-directory: ./athena-led
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          # ❌ 原来的写法：可能太简单了
-          # FILENAME="athena-led-${VERSION}.tar.gz"
           
-          # ✅ 修正后的写法：必须完全匹配 Makefile 里的 PKG_SOURCE
-          # 根据你的报错日志，它需要架构名和 v 前缀
+          # ⚠️ 强制指定为 Makefile 要求的长文件名格式 (带架构名)
           FILENAME="athena-led-aarch64-unknown-linux-musl-v${VERSION}.tar.gz"
           
           mkdir -p dist
@@ -73,7 +69,7 @@ jobs:
           echo "ASSET_NAME=$FILENAME" >> $GITHUB_OUTPUT
           echo "✅ Packed binary: $FILENAME"
 
-      # 6. 上传 Rust 二进制
+      # 6. 上传 Rust 二进制 (会自动上传上面生成的长文件名文件)
       - name: Upload Rust Binary to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -131,7 +127,6 @@ jobs:
             tar -xf "$SDK_FILE"
           fi
           
-          # [智能修复] 查找解压后的目录 (修复 mv 报错)
           EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
           mv "$EXTRACTED_DIR" sdk
 
@@ -149,12 +144,9 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ⚠️ [智能修复] 自动查找源码目录并创建链接
       - name: Compile Package
         working-directory: ./sdk
         run: |
-          # 1. 在 GitHub Workspace 中查找源码目录 (兼容根目录或 package/ 目录)
-          # 这里的逻辑是：找一个叫 luci-app-athena-led 的文件夹
           LUCI_SRC=$(find $GITHUB_WORKSPACE -type d -name "luci-app-athena-led" | head -n 1)
           
           if [ -z "$LUCI_SRC" ]; then
@@ -163,21 +155,14 @@ jobs:
              exit 1
           fi
           
-          echo "🔗 Found source at: $LUCI_SRC"
-          echo "🔗 Linking to: package/luci-app-athena-led"
-          
-          # 2. 创建软链接
           ln -s "$LUCI_SRC" package/luci-app-athena-led
           
-          # 3. 写入配置
           echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
           if [ "${{ matrix.use_apk }}" = "true" ]; then
              echo "CONFIG_SIGNED_PACKAGES=y" >> .config
           fi
           
           make defconfig
-          
-          # 4. 编译
           make package/luci-app-athena-led/download V=s
           make package/luci-app-athena-led/compile V=s -j$(nproc)
 
