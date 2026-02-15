@@ -16,11 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. 自动读取版本号
+      # 1. 🔍 [智能修复] 自动查找 Makefile 读取版本号
+      # 不再写死路径，兼容根目录或子目录结构
       - name: Get Version
         id: version
         run: |
-          PKG_VERSION=$(grep "PKG_VERSION:=" luci-app-athena-led/Makefile 2>/dev/null | cut -d"=" -f2 || echo "1.0.0")
+          # 查找名为 Makefile 的文件，且内容包含 PKG_VERSION
+          MAKEFILE_PATH=$(find . -name "Makefile" -print0 | xargs -0 grep -l "PKG_VERSION:=" | head -n 1)
+          
+          if [ -z "$MAKEFILE_PATH" ]; then
+            echo "⚠️ Makefile not found, using default version 1.0.0"
+            PKG_VERSION="1.0.0"
+          else
+            PKG_VERSION=$(grep "PKG_VERSION:=" "$MAKEFILE_PATH" | cut -d"=" -f2 | tr -d '[:space:]')
+            echo "✅ Found version $PKG_VERSION in $MAKEFILE_PATH"
+          fi
+          
           echo "VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
 
       # 2. 准备 Rust 环境
@@ -29,14 +40,12 @@ jobs:
         with:
           targets: aarch64-unknown-linux-musl
 
-      # 3. ⚠️ [修复] 安装 Zig 和 Zigbuild (用于编译 ring 的 C 代码)
+      # 3. 安装 Zig (解决 ring 编译报错)
       - name: Install Zig & Zigbuild
         run: |
           pip3 install cargo-zigbuild ziglang
-          echo "Zig installed!"
 
-      # 4. ⚠️ [修复] 使用 zigbuild 编译 (替代 cargo build)
-      # 它会自动处理 C 语言的交叉编译问题
+      # 4. 编译 Rust
       - name: Compile Rust
         working-directory: ./athena-led
         run: |
@@ -51,7 +60,6 @@ jobs:
           FILENAME="athena-led-${VERSION}.tar.gz"
           
           mkdir -p dist
-          # 注意：zigbuild 的输出目录和标准 build 一样
           cp target/aarch64-unknown-linux-musl/release/athena-led dist/
           
           cd dist
@@ -60,7 +68,7 @@ jobs:
           echo "ASSET_NAME=$FILENAME" >> $GITHUB_OUTPUT
           echo "✅ Packed binary: $FILENAME"
 
-      # 6. 上传 Rust 二进制到 Release
+      # 6. 上传 Rust 二进制
       - name: Upload Rust Binary to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -68,7 +76,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 7. 上传工件给 OpenWrt 任务
+      # 7. 传递给 OpenWrt 任务
       - name: Pass Artifact to Next Job
         uses: actions/upload-artifact@v4
         with:
@@ -76,7 +84,7 @@ jobs:
           path: athena-led/*.tar.gz
           retention-days: 1
 
-  # 🔵 第二阶段：编译 OpenWrt 安装包 (IPK & APK)
+  # 🔵 第二阶段：编译 OpenWrt 安装包
   build_openwrt:
     name: 2. Build ${{ matrix.type }}
     needs: build_rust
@@ -111,7 +119,6 @@ jobs:
           SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
           wget -q "$BASE_URL/$SDK_FILE"
           
-          echo "Extracting $SDK_FILE..."
           if [[ "$SDK_FILE" == *.zst ]]; then 
             zstd -d "$SDK_FILE" -o sdk.tar
             tar -xf sdk.tar
@@ -119,23 +126,14 @@ jobs:
             tar -xf "$SDK_FILE"
           fi
           
-          # ⚠️ 关键修复：直接查找解压后的目录，而不是解析 tar 内容
-          # find 命令只找当前目录下以 openwrt-sdk 开头的文件夹
+          # [智能修复] 查找解压后的目录 (修复 mv 报错)
           EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
-          
-          if [ -z "$EXTRACTED_DIR" ]; then
-            echo "❌ Error: Could not find extracted SDK directory!"
-            ls -la
-            exit 1
-          fi
-          
-          echo "Moving '$EXTRACTED_DIR' to 'sdk'..."
           mv "$EXTRACTED_DIR" sdk
+
       - name: Inject Source into SDK
         run: |
           mkdir -p sdk/dl
           cp local_dl/*.tar.gz sdk/dl/
-          echo "✅ Injected Rust binary into sdk/dl/"
 
       - name: Configure Feeds
         working-directory: ./sdk
@@ -146,17 +144,35 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # ⚠️ [智能修复] 自动查找源码目录并创建链接
       - name: Compile Package
         working-directory: ./sdk
         run: |
-          ln -s $GITHUB_WORKSPACE/luci-app-athena-led package/luci-app-athena-led
+          # 1. 在 GitHub Workspace 中查找源码目录 (兼容根目录或 package/ 目录)
+          # 这里的逻辑是：找一个叫 luci-app-athena-led 的文件夹
+          LUCI_SRC=$(find $GITHUB_WORKSPACE -type d -name "luci-app-athena-led" | head -n 1)
           
+          if [ -z "$LUCI_SRC" ]; then
+             echo "❌ Error: Could not find 'luci-app-athena-led' directory!"
+             find $GITHUB_WORKSPACE -maxdepth 2
+             exit 1
+          fi
+          
+          echo "🔗 Found source at: $LUCI_SRC"
+          echo "🔗 Linking to: package/luci-app-athena-led"
+          
+          # 2. 创建软链接
+          ln -s "$LUCI_SRC" package/luci-app-athena-led
+          
+          # 3. 写入配置
           echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
           if [ "${{ matrix.use_apk }}" = "true" ]; then
              echo "CONFIG_SIGNED_PACKAGES=y" >> .config
           fi
           
           make defconfig
+          
+          # 4. 编译
           make package/luci-app-athena-led/download V=s
           make package/luci-app-athena-led/compile V=s -j$(nproc)
 
