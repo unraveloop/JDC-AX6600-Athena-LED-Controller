@@ -111,10 +111,26 @@ jobs:
           SDK_FILE=$(wget -qO- "$BASE_URL/sha256sums" | grep "sdk" | grep "Linux-x86_64" | head -n 1 | awk '{print $2}' | sed 's/*//g')
           wget -q "$BASE_URL/$SDK_FILE"
           
-          if [[ "$SDK_FILE" == *.zst ]]; then zstd -d "$SDK_FILE" -o sdk.tar; tar -xf sdk.tar; else tar -xf "$SDK_FILE"; fi
-          EXTRACTED_DIR=$(tar -tf sdk.tar 2>/dev/null || tar -tf "$SDK_FILE" | head -n 1 | cut -f1 -d"/")
+          echo "Extracting $SDK_FILE..."
+          if [[ "$SDK_FILE" == *.zst ]]; then 
+            zstd -d "$SDK_FILE" -o sdk.tar
+            tar -xf sdk.tar
+          else 
+            tar -xf "$SDK_FILE"
+          fi
+          
+          # ⚠️ 关键修复：直接查找解压后的目录，而不是解析 tar 内容
+          # find 命令只找当前目录下以 openwrt-sdk 开头的文件夹
+          EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
+          
+          if [ -z "$EXTRACTED_DIR" ]; then
+            echo "❌ Error: Could not find extracted SDK directory!"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Moving '$EXTRACTED_DIR' to 'sdk'..."
           mv "$EXTRACTED_DIR" sdk
-
       - name: Inject Source into SDK
         run: |
           mkdir -p sdk/dl
