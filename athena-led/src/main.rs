@@ -3,11 +3,11 @@ mod char_dict;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::env;             // [新增] 修复 env::set_var 报错
+use std::env;             
 use std::fs;
-use std::time::{Duration, Instant}; // [修改] 修复 Instant 报错，同时引入 Duration
+use std::time::{Duration, Instant};
 use tokio::time;
-use tokio::signal::unix::{signal, SignalKind}; // [修改] 修复 signal(...) 函数报错
+use tokio::signal::unix::{signal, SignalKind}; 
 use chrono::{Local, NaiveTime, Timelike};
 use reqwest::Client;
 use serde::Deserialize;
@@ -44,12 +44,11 @@ struct SeniverseLocation {
 }
 #[derive(Deserialize, Debug)]
 struct SeniverseDaily {
-    high: String, // 注意：心知返回的是字符串类型的数字
+    high: String, 
     low: String,
-    code_day: String, // 天气现象代码，用来判断图标
+    code_day: String, 
 }
 
-// --- [新增] wttr.in 结构体 ---
 #[derive(Deserialize, Debug)]
 struct WttrResult {
     current_condition: Vec<WttrCurrent>,
@@ -57,7 +56,7 @@ struct WttrResult {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(non_snake_case)] // 允许字段名大写
+#[allow(non_snake_case)] 
 struct WttrCurrent {
     temp_C: String, 
     weatherDesc: Vec<WttrValue>,
