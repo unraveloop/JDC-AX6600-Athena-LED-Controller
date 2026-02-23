@@ -1,0 +1,22 @@
+#!/bin/sh
+# 雅典娜路由器 BTN_0 物理按键控制脚本 (athena-led)
+
+# 寻找我们的 Rust 核心程序进程号
+PID=$(pidof athena-led)
+
+# 如果程序没在运行，什么都不做，直接退出
+if [ -z "$PID" ]; then
+    exit 0
+fi
+
+if [ "$ACTION" = "pressed" ]; then
+    # 【短按】发送 SIGUSR1 信号，通知 Rust 切换显示模式
+    kill -SIGUSR1 $PID
+    
+    # 返回 2 秒，意思是如果用户按住不放，2秒后触发长按(timeout)事件
+    return 2 
+    
+elif [ "$ACTION" = "timeout" ]; then
+    # 【长按】发送 SIGUSR2 信号，通知 Rust 开启/关闭屏幕
+    kill -SIGUSR2 $PID
+fi
