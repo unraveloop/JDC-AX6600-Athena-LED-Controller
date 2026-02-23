@@ -1,0 +1,36 @@
+# =========================
+# 1. Rust 编译产物
+# =========================
+athena-led/target/
+**/*.rs.bk
+
+# =========================
+# 2. OpenWrt SDK / 本地编译遗留
+# =========================
+sdk/
+openwrt-sdk-*/
+dl/
+bin/
+tmp/
+build_dir/
+staging_dir/
+feeds/
+.config
+.config.old
+
+# =========================
+# 3. 打包产物 (由 GitHub Action 生成，不要传到源码库)
+# =========================
+dist/
+*.tar.gz
+*.ipk
+*.apk
+
+# =========================
+# 4. IDE 配置文件与系统缓存
+# =========================
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
