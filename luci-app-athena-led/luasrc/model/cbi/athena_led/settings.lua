@@ -20,7 +20,7 @@ o.default = "5"
 for i = 0, 7 do o:value(tostring(i), tostring(i)) end
 
 -- 物理按键 GPIO 绑定
-o = s:taboption("general", Value, "button_gpio", translate("Physical Button GPIO"))
+o = s:option(Value, "button_gpio", translate("Physical Button GPIO"))
 o.default = "71"
 o.datatype = "uinteger"
 o.description = translate("GPIO pin number for the physical screen button. Default is 71 for JDCloud AX6600. Run 'find_button' in SSH to detect if unsure.")
