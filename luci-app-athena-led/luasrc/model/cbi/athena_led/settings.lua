@@ -1,4 +1,7 @@
 local sys = require "luci.sys"
+local http = require "luci.http"         -- 🌟 防呆引入
+local dispatcher = require "luci.dispatcher" -- 🌟 防呆引入
+local sys = require "luci.sys"
 
 m = Map("athena_led", translate("Athena LED Controller"), translate("JDCloud AX6600 LED Screen Controller (v2.0.0 Multi-Profile Edition)"))
 
