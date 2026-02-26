@@ -248,7 +248,7 @@ btn_restart.inputstyle = "apply"
 btn_restart.description = translate("Force restart the process immediately.")
 function btn_restart.write(self, section)
     luci.sys.call("/etc/init.d/athena_led restart >/dev/null 2>&1")
-    luci.http.redirect(luci.dispatcher.build_url("admin", "services", "athena_led", "settings"))
+    luci.http.redirect(luci.dispatcher.build_url("admin", "services", "athena_led"))
 end
 
 -- 停止按钮
@@ -257,7 +257,7 @@ btn_stop.inputstyle = "remove"
 btn_stop.description = translate("Stop the process (Will restart on reboot if Enabled is checked).")
 function btn_stop.write(self, section)
     luci.sys.call("/etc/init.d/athena_led stop >/dev/null 2>&1")
-    luci.http.redirect(luci.dispatcher.build_url("admin", "services", "athena_led", "settings"))
+    luci.http.redirect(luci.dispatcher.build_url("admin", "services", "athena_led"))
 end
 
 return m
