@@ -29,7 +29,7 @@ v2.2.x Epic Animation Update:
 - 🎬 Bad Apple & Custom Animation Engine (0% CPU cost).
 - 📂 Auto-scan preset animations in LuCI.
 - Single/Multi-profile seamless switching via physical button.
-- Hardware LED state locking and HTTP caching.
+- Hardware LED state locking.
 endef
 
 define Build/Prepare
