@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-athena-led
-PKG_VERSION:=2.2.2
+PKG_VERSION:=2.2.3
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=unraveloop <https://github.com/unraveloop>
@@ -70,9 +70,12 @@ define Package/$(PKG_NAME)/install
 	# 6. 安装物理按键探测脚本 (同时去掉 .sh 后缀，提升命令逼格)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/root/usr/bin/find_button.sh $(1)/usr/bin/find_button
 
-	# 7. 安装 i18n 语言包
+# 7. 安装 i18n 语言包 (双后缀通杀版)
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n
-	[ -f $(PKG_BUILD_DIR)/zh_Hans.lmo ] && $(INSTALL_DATA) $(PKG_BUILD_DIR)/zh_Hans.lmo $(1)/usr/lib/lua/luci/i18n/athena_led.zh-cn.lmo || true
+	[ -f $(PKG_BUILD_DIR)/zh_Hans.lmo ] && { \
+		$(INSTALL_DATA) $(PKG_BUILD_DIR)/zh_Hans.lmo $(1)/usr/lib/lua/luci/i18n/athena_led.zh-cn.lmo; \
+		$(INSTALL_DATA) $(PKG_BUILD_DIR)/zh_Hans.lmo $(1)/usr/lib/lua/luci/i18n/athena_led.zh_Hans.lmo; \
+	} || true
 endef
 
 define Package/$(PKG_NAME)/postinst
