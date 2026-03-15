@@ -1,6 +1,6 @@
 [package]
 name = "athena-led"
-version = "2.2.3"
+version = "2.2.4"
 edition = "2021"
 license = "Apache-2.0"
 

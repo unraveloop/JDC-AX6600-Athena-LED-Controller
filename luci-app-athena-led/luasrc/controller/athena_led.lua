@@ -1,14 +1,15 @@
 module("luci.controller.athena_led", package.seeall)
 
-local nixio = require "nixio"
 local sys = require "luci.sys"
 local http = require "luci.http"
 
 function index()
     -- 如果配置文件不存在，就不显示菜单
-    if not nixio.fs.access("/etc/config/athena_led") then
+    local f = io.open("/etc/config/athena_led", "r")
+    if not f then
         return
     end
+    f:close()
 
     -- 1. 主菜单入口
     -- 我把它改到了 "Services" (服务) 下，这样更符合 OpenWrt 插件规范

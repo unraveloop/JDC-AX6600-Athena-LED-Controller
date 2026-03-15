@@ -199,6 +199,11 @@ struct SystemMonitor {
     led_up_timer: Instant,
     led_down_state: bool,
     led_down_timer: Instant,
+
+
+    led_last_cpu_total: u64,
+    led_last_cpu_idle: u64,
+    led_cpu_usage: f64,
 }
 
 impl SystemMonitor {
@@ -254,6 +259,11 @@ impl SystemMonitor {
 
             // [新增] 自动定位缓存，避免频繁请求 IP 接口
             auto_location: String::new(),
+
+
+            led_last_cpu_total: 0,
+            led_last_cpu_idle: 0,
+            led_cpu_usage:  0.0,
         })
 
         
@@ -289,13 +299,43 @@ impl SystemMonitor {
     // ==========================================
     // [灯光大脑 3] 综合输出当前 100ms 的 4 灯状态
     // ==========================================
+// ==========================================
+    // [灯光大脑 3] 综合输出当前 100ms 的 4 灯状态 (状态隔离版)
+    // ==========================================
     pub fn get_global_led_flag(&mut self) -> u8 {
         let mut flag = 0;
         let now = Instant::now();
 
-        // 🕒 1. 时钟灯 (Bit 0, Val 1): 绑定 CPU 负载 (100%狂闪，0%慢闪)
-        let cpu_usage = self.get_cpu_usage_f64(); 
-        let cpu_interval = (1000.0 - (cpu_usage * 8.0)).max(100.0) as u128;
+        // 🔄 核心修复：每 0.25 秒统一刷新一次底层硬件数据 (网络 + CPU)
+        let net_duration = now.duration_since(self.led_last_time).as_secs_f64();
+        if net_duration >= 0.25 {
+            // 1. 独立计算网速 (防止减法溢出)
+            let (curr_rx, curr_tx) = self.read_net_bytes_for(&self.net_interface);
+            if self.led_last_rx > 0 && curr_rx >= self.led_last_rx {
+                self.led_rx_speed = (curr_rx - self.led_last_rx) as f64 / net_duration;
+                self.led_tx_speed = (curr_tx - self.led_last_tx) as f64 / net_duration;
+            } else {
+                self.led_rx_speed = 0.0;
+                self.led_tx_speed = 0.0;
+            }
+            self.led_last_rx = curr_rx;
+            self.led_last_tx = curr_tx;
+            
+            // 2. 🌟 独立计算 CPU (不再和屏幕显示的 CPU 抢夺数据！)
+            let (curr_cpu_total, curr_cpu_idle) = self.read_cpu_stats();
+            let diff_total = curr_cpu_total.saturating_sub(self.led_last_cpu_total);
+            let diff_idle = curr_cpu_idle.saturating_sub(self.led_last_cpu_idle);
+            self.led_last_cpu_total = curr_cpu_total;
+            self.led_last_cpu_idle = curr_cpu_idle;
+            if diff_total > 0 {
+                self.led_cpu_usage = 100.0 * (1.0 - (diff_idle as f64 / diff_total as f64));
+            }
+            
+            self.led_last_time = now;
+        }
+
+        // 🕒 1. 时钟灯 (Bit 0, Val 1): 绑定专属 CPU 负载
+        let cpu_interval = (1000.0 - (self.led_cpu_usage * 8.0)).max(100.0) as u128;
         if now.duration_since(self.led_clock_timer).as_millis() > cpu_interval {
             self.led_clock_state = !self.led_clock_state;
             self.led_clock_timer = now;
@@ -309,41 +349,23 @@ impl SystemMonitor {
         }
         if self.led_medal_state { flag |= 2; }
 
-        // 🔄 独立测速计算 (每0.5秒刷新一次)
-        let net_duration = now.duration_since(self.led_last_time).as_secs_f64();
-        if net_duration >= 0.5 {
-            // 🌟 [修复点] 调用带参数的新方法，传入全局默认网卡
-            let (curr_rx, curr_tx) = self.read_net_bytes_for(&self.net_interface);
-            if self.led_last_rx > 0 {
-                self.led_rx_speed = (curr_rx.saturating_sub(self.led_last_rx)) as f64 / net_duration;
-                self.led_tx_speed = (curr_tx.saturating_sub(self.led_last_tx)) as f64 / net_duration;
-            }
-            self.led_last_rx = curr_rx;
-            self.led_last_tx = curr_tx;
-            self.led_last_time = now;
-        }
-
-        // ⬆️ 3. 上箭头 (Bit 2, Val 4): 绑定上传速度 (无级变速闪烁)
-        if self.led_tx_speed > 10240.0 { // 大于 10KB/s 才开始工作
-            // 算法映射: 速度从 0 到 10MB/s (10_485_760.0 Bytes)
-            // 闪烁间隔从 800ms (慢闪) 平滑过渡到 100ms (狂闪)
+        // ⬆️ 3. 上箭头 (Bit 2, Val 4): 绑定上传速度
+        if self.led_tx_speed > 10240.0 { 
             let speed_ratio = (self.led_tx_speed / 10_485_760.0).min(1.0);
             let tx_interval = (800.0 - (speed_ratio * 700.0)) as u128;
-            
             if now.duration_since(self.led_up_timer).as_millis() > tx_interval {
                 self.led_up_state = !self.led_up_state;
                 self.led_up_timer = now;
             }
             if self.led_up_state { flag |= 4; }
         } else { 
-            self.led_up_state = false; // 没网速直接熄灭
+            self.led_up_state = false; 
         }
 
-        // ⬇️ 4. 下箭头 (Bit 3, Val 8): 绑定下载速度 (无级变速闪烁)
+        // ⬇️ 4. 下箭头 (Bit 3, Val 8): 绑定下载速度
         if self.led_rx_speed > 10240.0 { 
             let speed_ratio = (self.led_rx_speed / 10_485_760.0).min(1.0);
             let rx_interval = (800.0 - (speed_ratio * 700.0)) as u128;
-            
             if now.duration_since(self.led_down_timer).as_millis() > rx_interval {
                 self.led_down_state = !self.led_down_state;
                 self.led_down_timer = now;
@@ -354,7 +376,7 @@ impl SystemMonitor {
         }
 
         flag
-    } 
+    }
     
     
 
@@ -1880,8 +1902,39 @@ async fn process_loop(
 
             // === [核心剥离] 静态模块的智能渲染层 ===
             if !text_to_show.is_empty() {
+                // 🌟 新增：文字内容刷新计时器
+                let mut last_refresh_time = Instant::now();
                 let module_start_time = Instant::now();
                 while module_start_time.elapsed() < Duration::from_secs(module.duration) {
+                    // 🌟 新增：每隔 1 秒，重新抓取一次动态数据
+                    if last_refresh_time.elapsed().as_secs() >= 1 {
+                        let target_iface = if module.param.is_empty() { &args.net_interface } else { &module.param };
+                        
+                        match module.name.as_str() {
+                            // --- 🌐 网速组 ---
+                            "netspeed_down" => text_to_show = monitor.get_speed_string_for(0, target_iface),
+                            "netspeed_up"   => text_to_show = monitor.get_speed_string_for(1, target_iface),
+                            "updl"          => text_to_show = monitor.get_updl_string(),
+                            
+                            // --- 💻 系统组 ---
+                            "cpu"           => text_to_show = monitor.get_cpu_usage_string(),
+                            "mem"           => text_to_show = monitor.get_mem_string(),
+                            "load"          => text_to_show = monitor.get_load_string(),
+                            "temp"          => text_to_show = monitor.get_temps_by_ids(&args.temp_flag),
+                            "temp_single"   => {
+                                let sensor_id = if module.param.is_empty() { "4" } else { &module.param };
+                                text_to_show = monitor.get_single_temp(sensor_id); 
+                            },
+                            "dev"           => text_to_show = monitor.get_online_devices(),
+                            
+                            // --- 🕒 时间组 (防止跨分) ---
+                            "time"          => text_to_show = Local::now().format("%H:%M").to_string(),
+                            
+                            _ => {} // 纯静态模块（如 Banner）不处理
+                        }
+                        last_refresh_time = Instant::now(); // 重置计时器
+                    }
+
                     
                     // 🌟 神级打断逻辑：画图和按键同时进行！
                     tokio::select! {
