@@ -20,8 +20,13 @@ function getServiceStatus() {
 		pid = (pid || '').trim();
 		if (!pid || !/^\d+$/.test(pid))
 			return { running: false };
-		return fs.stat('/proc/' + pid + '/stat').then(
-			function() { return { running: true, pid: pid }; },
+		// 🌟 校验 cmdline 确实是 athena-led (只 stat 的话，进程被 kill -9 后
+		// PID 被其他进程复用会误报 RUNNING)
+		return fs.read('/proc/' + pid + '/cmdline').then(
+			function(cmdline) {
+				var running = (cmdline || '').indexOf('athena-led') !== -1;
+				return { running: running, pid: pid };
+			},
 			function() { return { running: false }; }
 		);
 	}).catch(function() {
@@ -53,9 +58,11 @@ function addModuleOptions(o) {
 	o.value('uptime', _('⏱️ System Uptime'));
 
 	// 3. 网络与流量 (网卡可选)
-	o.value('traffic_split', _('🌐 Realtime Speed (DL/UL)'));
+	// 🌟 [修复] updl 才是实时上下行同显; traffic_split 是累计流量 (旧版标签张冠李戴)
+	o.value('updl', _('🚀 Realtime Speed (UL/DL)'));
 	o.value('netspeed_down', _('⬇️ Download Speed'));
 	o.value('netspeed_up', _('⬆️ Upload Speed'));
+	o.value('traffic_split', _('🌐 Total Traffic (DL/UL split)'));
 	o.value('traffic_down', _('📥 Total Downloaded'));
 	o.value('traffic_up', _('📤 Total Uploaded'));
 	o.value('traffic_total', _('📊 Total Traffic (DL+UL)'));
@@ -108,6 +115,7 @@ function addModuleParams(s, netDevices, animFiles) {
 	o.value('time_sec', _('⌚ HH:MM:SS'));
 	o.value('time', _('⌚ Static HH:MM'));
 	o.value('date', _('📅 MM-DD'));
+	o.value('date_y', _('📅 YY-MM-DD'));
 	o.value('date_Y', _('📅 YYYY.MM.DD'));
 	o.value('weekday', _('🗓️ Week & Time (Cycle)'));
 	o.value('week_only', _('🗓️ Day of Week'));
@@ -186,7 +194,7 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('athena_led', _('Athena LED Controller'),
-			_('JDCloud AX6600 LED Screen Controller (v2.3.0 — dual GPIO backend, split packages, JS UI)'));
+			_('JDCloud AX6600 LED Screen Controller (v2.4.0 — lunar/sun/MQTT/alerts, dual GPIO backend, JS UI)'));
 
 		// ============================================================
 		// 板块 1: 基础设置

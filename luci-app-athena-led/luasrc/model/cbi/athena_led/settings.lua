@@ -95,7 +95,9 @@ local function add_module_options(opt)
     opt:value("uptime", translate("⏱️ System Uptime"))
 
     -- 3. 网络与流量 (网卡可选)
-    opt:value("traffic_split", translate("🌐 Realtime Speed (DL/UL)"))
+    -- 🌟 [修复] updl 才是实时上下行同显; traffic_split 是累计流量
+    opt:value("updl", translate("🚀 Realtime Speed (UL/DL)"))
+    opt:value("traffic_split", translate("🌐 Total Traffic (DL/UL split)"))
     opt:value("netspeed_down", translate("⬇️ Download Speed"))
     opt:value("netspeed_up", translate("⬆️ Upload Speed"))
     opt:value("traffic_down", translate("📥 Total Downloaded"))

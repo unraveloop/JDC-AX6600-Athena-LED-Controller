@@ -5,7 +5,7 @@
 			"uci": [ "athena_led" ],
 			"file": {
 				"/var/run/athena-led.pid": [ "read" ],
-				"/proc/*/stat": [ "stat" ],
+				"/proc/*/cmdline": [ "read" ],
 				"/etc/athena_led/anim": [ "list" ]
 			}
 		},

@@ -305,6 +305,9 @@ struct NetAgent {
 
     cached_ip: String,
     last_ip_time: Instant,
+    // 🌟 [修复] IP 查询失败退避 (以前断网时每 5 秒 tick 都发起 30 秒超时请求，
+    // 串行拖慢 ping/日出日落等所有后台刷新)
+    last_ip_attempt: Option<Instant>,
 
     http_cache_text: String,
     http_cache_time: Instant,
@@ -334,6 +337,7 @@ impl NetAgent {
             last_weather_attempt: None,
             cached_ip: "IP:Err".to_string(),
             last_ip_time: Instant::now(),
+            last_ip_attempt: None,
             http_cache_text: String::new(),
             http_cache_time: Instant::now(),
             auto_location: String::new(),
@@ -466,6 +470,14 @@ impl NetAgent {
             }
         }
 
+        // 🌟 [修复] 失败退避: 距上次尝试不足 120 秒不再重复请求 (与天气策略一致)
+        if let Some(last_try) = self.last_ip_attempt {
+            if last_try.elapsed() < Duration::from_secs(120) {
+                return self.cached_ip.clone();
+            }
+        }
+        self.last_ip_attempt = Some(Instant::now());
+
         #[cfg(debug_assertions)]
         println!("DEBUG: Fetching IP from network...");
 
@@ -557,10 +569,17 @@ impl NetAgent {
         }
     }
 
+    // 天气结果是否为有效数据: 所有失败分支都以 "W:" 开头 (W:Err/W:NoCity/W:GeoNet/W:NoKey...)，
+    // 正常数据以天气图标开头 ("☀ 25℃ 20-30")；初始占位为 "Wait..."
+    // 🌟 [修复] 以前只查 Err/Wait 关键词，W:NoCity 这类错误会被当有效数据缓存 30 分钟
+    fn weather_is_good(text: &str) -> bool {
+        !text.starts_with("W:") && !text.contains("Wait")
+    }
+
     // --- [入口] 统一智能天气接口 ---
     async fn get_smart_weather(&mut self, location: &str, source: &str, key: &str) -> String {
         // 1. [缓存检查] 缓存有效且未过期 (30分钟)，直接返回
-        let cache_good = !self.cached_weather.contains("Err") && !self.cached_weather.contains("Wait");
+        let cache_good = Self::weather_is_good(&self.cached_weather);
         if cache_good && self.last_weather_time.elapsed() < Duration::from_secs(1800) {
             return self.cached_weather.clone();
         }
@@ -607,7 +626,7 @@ impl NetAgent {
         };
 
         // 3. [更新缓存]
-        if !result.contains("Err") && !result.contains("Wait") {
+        if Self::weather_is_good(&result) {
             self.cached_weather = result.clone();
             self.last_weather_time = Instant::now();
             result

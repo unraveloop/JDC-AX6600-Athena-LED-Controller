@@ -147,9 +147,16 @@ pub async fn process_loop(
 ) -> Result<()> {
 
     // --- 1. 动态解析用户的智能配置 ---
-    let default_profiles = vec!["date timeBlink weather stock uptime netspeed_down netspeed_up cpu".to_string()];
-    let profile_args: &[String] = if args.profile.is_empty() { &default_profiles } else { &args.profile };
-    let profiles = parse_profiles(profile_args, args.seconds);
+    let mut profiles = parse_profiles(&args.profile, args.seconds);
+    // 🌟 [防御] profile 为空或全是空白 (如手工 --profile "") 时兜底内置配置,
+    // 否则下方索引会 panic → panic=abort → procd 无限 respawn
+    if profiles.is_empty() {
+        println!("⚠️ [配置] profile 为空，回退内置默认轮播");
+        profiles = parse_profiles(
+            &["date timeBlink weather stock uptime netspeed_down netspeed_up cpu".to_string()],
+            args.seconds,
+        );
+    }
 
     let profiles_count = profiles.len();
     let mut current_profile_idx = 0;
@@ -172,6 +179,11 @@ pub async fn process_loop(
             screen.power(false, 0).unwrap_or_default();
             // 陷入沉睡，直到监听到大于 0 的短按唤醒信号
             let _ = rx.wait_for(|&val| val > 0).await;
+            // 🌟 [修复] 息屏期间收到 home 指令: 唤醒时消费 go_home，
+            // 否则指令不生效且旗标残留、污染之后的第一次单击
+            if control.lock().map(|mut st| std::mem::take(&mut st.go_home)).unwrap_or(false) {
+                current_profile_idx = 0;
+            }
             applied_light = effective_light(args, control);
             screen.power(true, applied_light).unwrap_or_default();
             continue;
@@ -197,6 +209,10 @@ pub async fn process_loop(
                 Ok(_) = rx.changed() => {
                     // 赋予 60 秒免死金牌，这 60 秒内正常轮播配置
                     manual_wake_expire = Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+                    // 🌟 [修复] 休眠期间的 home 指令同样在唤醒时消费
+                    if control.lock().map(|mut st| std::mem::take(&mut st.go_home)).unwrap_or(false) {
+                        current_profile_idx = 0;
+                    }
                     applied_light = effective_light(args, control);
                     screen.power(true, applied_light).unwrap_or_default();
                     continue;
@@ -243,6 +259,9 @@ pub async fn process_loop(
             let show_req = control.lock().ok().and_then(|mut st| st.pending_show.take());
             if let Some((text, secs)) = show_req {
                 println!("📢 [插播] 显示 {} 秒: {}", secs, text);
+                // 🌟 [修复] 清掉积压的 watch 版本 (show 指令自带的 nudge 信号):
+                // 否则插播循环第一次 rx.changed() 立即命中，文本只闪一帧就被掐死
+                let _ = rx.borrow_and_update();
                 let show_start = Instant::now();
                 let mut show_interrupted = false;
                 while show_start.elapsed() < Duration::from_secs(secs) {
@@ -275,6 +294,8 @@ pub async fn process_loop(
                         && last_alert_shown.map_or(true, |i| i.elapsed() >= Duration::from_secs(60))
                     {
                         println!("🔥 [告警] 温度 {:.1}°C 超过阈值 {}°C，插播警示", t, args.temp_alert);
+                        // 🌟 [修复] 同 show 插播: 先清掉积压的 watch 版本防瞬断
+                        let _ = rx.borrow_and_update();
                         let alert_start = Instant::now();
                         let mut blink = true;
                         let mut alert_interrupted = false;
@@ -438,9 +459,30 @@ pub async fn process_loop(
                         None => {
                             // 解析失败时，直接显示原文，防止极端乱码卡死
                             let _ = screen.write_data(full_text.as_bytes(), get_leds(monitor, args)).await;
-                            // 🌟 [修复] 短暂停留 2 秒再切走：以前这里瞬间跳过，
-                            // 导致天气失败时模块“一闪而过”，用户完全看不到发生了什么
-                            tokio::time::sleep(Duration::from_secs(2)).await;
+                            // 🌟 [修复] 短暂停留 2 秒再切走 (可被按键打断，不再吞掉打断信号)
+                            let mut wait_interrupted = false;
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                                Ok(_) = rx.changed() => { wait_interrupted = true; }
+                            }
+                            if wait_interrupted {
+                                if *rx.borrow() < 0 { break; }
+                                let go_home = control.lock().map(|mut st| std::mem::take(&mut st.go_home)).unwrap_or(false);
+                                if go_home {
+                                    current_profile_idx = 0;
+                                    switched_by_button = true;
+                                    break;
+                                }
+                                if control.lock().map(|st| st.pending_show.is_some()).unwrap_or(false) {
+                                    switched_by_button = true;
+                                    break;
+                                }
+                                if profiles_count > 1 {
+                                    current_profile_idx = (current_profile_idx + 1) % profiles_count;
+                                    switched_by_button = true;
+                                    break;
+                                }
+                            }
                             module_idx += 1;
                             continue;
                         }

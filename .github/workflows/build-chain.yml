@@ -75,7 +75,9 @@ jobs:
           echo "✅ Packed binary: $FILENAME"
 
       # 6. 上传 Rust 二进制 + 校验和
+      # 🌟 [修复] 仅 release 事件上传 (workflow_dispatch 手动触发无 tag 上下文会失败)
       - name: Upload Rust Binary to Release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -190,7 +192,9 @@ jobs:
           done | sed 's# \./.*/# #' > sha256sums-${{ matrix.type }}.txt
           cat sha256sums-${{ matrix.type }}.txt
 
+      # 🌟 [修复] 仅 release 事件上传 (手动触发时产物可在 Actions 页下载不上传)
       - name: Upload Packages to Release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
           # 通配 athena-led*.ipk 同时覆盖 athena-led 与 luci-app-athena-led 两个包
