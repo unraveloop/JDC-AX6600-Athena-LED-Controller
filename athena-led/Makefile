@@ -5,7 +5,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=athena-led
-PKG_VERSION:=2.4.0
+PKG_VERSION:=2.5.0
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=unraveloop <https://github.com/unraveloop>

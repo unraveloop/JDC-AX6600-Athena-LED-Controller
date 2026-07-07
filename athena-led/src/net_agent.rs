@@ -7,6 +7,7 @@
 // 现在所有网络请求由本模块的后台任务定时刷新，写入共享快照；
 // 渲染层只读快照，永不等待网络。
 // ==========================================
+use crate::control::{Alert, SharedControl};
 use crate::Args;
 use regex::Regex;
 use reqwest::Client;
@@ -177,7 +178,7 @@ fn extract_json_number(text: &str, key: &str) -> Option<f64> {
 // ==========================================
 // 🚀 启动后台代理：扫描 profile 只刷新真正用到的数据种类
 // ==========================================
-pub fn spawn_net_agent(args: Args) -> NetHandle {
+pub fn spawn_net_agent(args: Args, control: SharedControl) -> NetHandle {
     let snapshot = Arc::new(RwLock::new(NetSnapshot::default()));
     let handle = NetHandle(Arc::clone(&snapshot));
 
@@ -228,6 +229,8 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
         let mut last_stock: Option<Instant> = None;
         let mut last_ping: Option<Instant> = None;
         let mut last_sun_day: Option<chrono::NaiveDate> = None;
+        // 🚨 [v2.5.0] 公网 IP 变化提醒: 记录上一次的有效 IP
+        let mut last_good_ip: Option<String> = None;
 
         loop {
             // 各数据源的节流策略在 agent 方法内部 (天气 30min 缓存 + 120s 失败退避、
@@ -241,6 +244,25 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
 
             if want_ip {
                 let text = agent.get_public_ip(&args.ip_url).await;
+
+                // 🚨 [v2.5.0] 公网 IP 变化提醒 (仅在两次都是有效 IP 且不同时播报;
+                // 开机首次获取只记录不播报)
+                if args.alert_ip && !text.contains("Err") && !text.contains("Wait") {
+                    if let Some(prev) = &last_good_ip {
+                        if prev != &text {
+                            println!("🚨 [告警] 公网 IP 变化: {} -> {}", prev, text);
+                            if let Ok(mut st) = control.lock() {
+                                st.pending_alerts.push(Alert {
+                                    text: format!("NEW {}", text),
+                                    blink: false,
+                                    secs: 6,
+                                });
+                            }
+                        }
+                    }
+                    last_good_ip = Some(text.clone());
+                }
+
                 if let Ok(mut s) = snapshot.write() { s.ip = text; }
             }
 

@@ -83,6 +83,9 @@ athena-led [选项]
 | **自动化 (v2.4.0)** |  |  |  |
 | `--temp-alert <°C>` | `0` | 温度告警阈值，超过时插播闪烁警示 (0=关，3°C 滞回) | `temp_alert` |
 | `--temp-alert-sensor <ID>` | `4` | 告警监控的 thermal_zone 编号 | `temp_alert_sensor` |
+| `--alert-wan` | 关 | 断网闪烁 `NET DOWN` / 恢复显示 `NET OK` (v2.5.0) | `alert_wan` |
+| `--alert-newdev` | 关 | 陌生设备接入时显示 `NEW xx:xx:xx` (v2.5.0) | `alert_newdev` |
+| `--alert-ip` | 关 | 公网 IP 变化时上屏新地址 (v2.5.0, 需启用 ip 模块) | `alert_ip` |
 | `--control-port <PORT>` | `0` | 运行时控制接口 (仅监听 127.0.0.1)。用法: `echo "show 10 HI" \| nc 127.0.0.1 端口`，指令: next / home / off / wake / toggle / light 0-7 / show 秒 文本 | `control_port` |
 | `--mqtt-broker <host[:port]>` | `""` | MQTT broker 地址 (空 = 关闭) | `mqtt_broker` |
 | `--mqtt-topic <topic>` | `athena-led/display` | 订阅主题，收到的消息经 `mqtt` 模块上屏 | `mqtt_topic` |

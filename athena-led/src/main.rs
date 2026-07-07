@@ -163,6 +163,16 @@ pub struct Args {
     #[arg(long, default_value = "4")]
     pub temp_alert_sensor: String,
 
+    // 🚨 [v2.5.0] 告警框架扩展开关
+    #[arg(long)]
+    pub alert_wan: bool,    // WAN 断网/恢复提醒
+
+    #[arg(long)]
+    pub alert_newdev: bool, // 新设备接入提醒 (ARP)
+
+    #[arg(long)]
+    pub alert_ip: bool,     // 公网 IP 变化提醒
+
     // 运行时控制接口端口 (监听 127.0.0.1，0 = 关闭)
     // 用法: echo "show 10 HELLO" | nc 127.0.0.1 <端口>
     #[arg(long, default_value_t = 0)]
@@ -237,18 +247,18 @@ async fn main() -> Result<()> {
     // 初始化本地系统监控 (纯 /proc、/sys 读取，不会失败)
     let mut monitor = monitor::SystemMonitor::new(args.net_interface.clone());
 
+    // 🌟 [v2.4.0] 共享控制状态 (按键双击 / 控制接口 / 告警队列共用)
+    let control_state = control::new_shared();
+
     // 🌟 [v2.3.1] 启动后台网络代理：天气/IP/股票/HTTP/延迟全部后台刷新，
     // 渲染循环只读快照，彻底告别"缓存过期瞬间屏幕冻结 30 秒"
-    let net = net_agent::spawn_net_agent(args.clone());
+    let net = net_agent::spawn_net_agent(args.clone(), std::sync::Arc::clone(&control_state));
 
     // 🌟 [v2.4.0] MQTT 集成 (broker 未配置时零开销)
     let mqtt = mqtt::spawn_mqtt(&args.mqtt_broker, &args.mqtt_topic, &args.mqtt_user, &args.mqtt_pass);
 
     // 初始化通信频道
     let (tx, mut rx) = tokio::sync::watch::channel(1i32);
-
-    // 🌟 [v2.4.0] 共享控制状态 (按键双击 / 控制接口共用)
-    let control_state = control::new_shared();
 
     // 🌟 [v2.4.0] 运行时控制接口 (port=0 时不启动)
     control::spawn_control_server(args.control_port, tx.clone(), std::sync::Arc::clone(&control_state));

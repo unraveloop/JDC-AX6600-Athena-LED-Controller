@@ -167,9 +167,7 @@ pub async fn process_loop(
     // 🌟 [定时亮度] 当前已应用的亮度档 (main 启动时用的是 light_level)
     let mut applied_light = args.light_level;
 
-    // 🌟 [v2.4.0 温度告警] 告警状态 (3°C 滞回) 与上次插播时间
-    let mut temp_alert_on = false;
-    let mut last_alert_shown: Option<Instant> = None;
+    // (v2.5.0: 温度告警状态已迁入 monitor.poll_alerts 统一管理)
 
     // --- 2. 状态机死循环 ---
     loop {
@@ -278,41 +276,53 @@ pub async fn process_loop(
             }
 
             // ==========================================
-            // 🔥 [v2.4.0 插播 2] 温度告警: 超阈值闪烁警示
-            // 3°C 滞回防抖动，告警持续期间每 60 秒最多插播一次 (5 秒)
+            // 🚨 [v2.5.0 插播 2] 统一告警播报
+            // 来源: monitor.poll_alerts (温度/断网恢复/新设备) + 后台队列 (IP 变化等)
+            // 紧急告警 (blink) 闪烁 + 四状态灯全亮；通知类静态/滚动显示
             // ==========================================
-            if args.temp_alert > 0 {
-                if let Some(t) = monitor.get_temp_value(&args.temp_alert_sensor) {
-                    let threshold = args.temp_alert as f64;
-                    if t >= threshold {
-                        temp_alert_on = true;
-                    } else if t <= threshold - 3.0 {
-                        temp_alert_on = false;
-                    }
+            let mut alerts = monitor.poll_alerts(args);
+            if let Ok(mut st) = control.lock() {
+                alerts.append(&mut st.pending_alerts);
+            }
+            if !alerts.is_empty() {
+                // 清掉积压的 watch 版本，防止播报被历史信号瞬断
+                let _ = rx.borrow_and_update();
+                let mut alert_off_requested = false;
 
-                    if temp_alert_on
-                        && last_alert_shown.map_or(true, |i| i.elapsed() >= Duration::from_secs(60))
-                    {
-                        println!("🔥 [告警] 温度 {:.1}°C 超过阈值 {}°C，插播警示", t, args.temp_alert);
-                        // 🌟 [修复] 同 show 插播: 先清掉积压的 watch 版本防瞬断
-                        let _ = rx.borrow_and_update();
-                        let alert_start = Instant::now();
-                        let mut blink = true;
-                        let mut alert_interrupted = false;
-                        while alert_start.elapsed() < Duration::from_secs(5) {
-                            let text = if blink { format!("HOT {:.0}C", t) } else { String::new() };
+                for alert in alerts {
+                    println!("🚨 [告警] 插播 {} 秒: {}", alert.secs, alert.text);
+                    let alert_start = Instant::now();
+                    let mut blink_on = true;
+                    let mut alert_interrupted = false;
+
+                    while alert_start.elapsed() < Duration::from_secs(alert.secs) {
+                        if alert.blink {
+                            let text = if blink_on { alert.text.clone() } else { String::new() };
                             // 状态灯全亮 (15 = 四灯) 强化警示
                             let _ = screen.write_data(text.as_bytes(), 15).await;
-                            blink = !blink;
+                            blink_on = !blink_on;
                             tokio::select! {
                                 _ = tokio::time::sleep(Duration::from_millis(400)) => {}
                                 Ok(_) = rx.changed() => { alert_interrupted = true; break; }
                             }
+                        } else {
+                            tokio::select! {
+                                _ = async {
+                                    let _ = screen.write_data(alert.text.as_bytes(), get_leds(monitor, args)).await;
+                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                } => {}
+                                Ok(_) = rx.changed() => { alert_interrupted = true; break; }
+                            }
                         }
-                        last_alert_shown = Some(Instant::now());
-                        if alert_interrupted && *rx.borrow() < 0 { break; }
+                    }
+
+                    if alert_interrupted {
+                        // 按键打断: 放弃剩余告警; 长按息屏则交给外层处理
+                        if *rx.borrow() < 0 { alert_off_requested = true; }
+                        break;
                     }
                 }
+                if alert_off_requested { break; }
             }
 
             // 提取静态文本

@@ -103,8 +103,12 @@ start_service() {
 
     # 🌟 [v2.4.0] 温度告警 / 控制接口 / MQTT
     local tempAlert tempAlertSensor controlPort mqttBroker mqttTopic mqttUser mqttPass
+    local alertWan alertNewdev alertIp
     config_get tempAlert "$cfg" 'temp_alert' '0'
     config_get tempAlertSensor "$cfg" 'temp_alert_sensor' '4'
+    config_get_bool alertWan "$cfg" 'alert_wan' '0'
+    config_get_bool alertNewdev "$cfg" 'alert_newdev' '0'
+    config_get_bool alertIp "$cfg" 'alert_ip' '0'
     config_get controlPort "$cfg" 'control_port' '0'
     config_get mqttBroker "$cfg" 'mqtt_broker' ''
     config_get mqttTopic "$cfg" 'mqtt_topic' 'athena-led/display'
@@ -200,6 +204,10 @@ start_service() {
         procd_append_param command --temp-alert "$tempAlert"
         procd_append_param command --temp-alert-sensor "$tempAlertSensor"
     }
+    # 🚨 [v2.5.0] 告警框架扩展
+    [ "$alertWan" -eq 1 ] && procd_append_param command --alert-wan
+    [ "$alertNewdev" -eq 1 ] && procd_append_param command --alert-newdev
+    [ "$alertIp" -eq 1 ] && procd_append_param command --alert-ip
     [ "$controlPort" != "0" ] && procd_append_param command --control-port "$controlPort"
     [ -n "$mqttBroker" ] && {
         procd_append_param command --mqtt-broker "$mqttBroker"

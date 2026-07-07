@@ -1,3 +1,5 @@
+// ⚠️ 修改字模时请同步更新 LuCI 屏幕预览的 JS 字模表:
+//    luci-app-athena-led/htdocs/luci-static/resources/view/athena_led/settings.js (CHAR_DICT)
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 

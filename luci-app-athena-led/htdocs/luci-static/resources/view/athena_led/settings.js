@@ -34,6 +34,134 @@ function getServiceStatus() {
 	});
 }
 
+// ==========================================
+// 🖥️ [v2.5.0] 屏幕预览: 27×5 点阵模拟
+// ⚠️ 字模数据与 athena-led/src/char_dict.rs 保持同步 (bit0=顶行, bit4=底行)
+// ==========================================
+var CHAR_DICT = {
+	'0': [31, 17, 31], '1': [17, 31, 16], '2': [25, 21, 19], '3': [17, 21, 31],
+	'4': [7, 4, 31],   '5': [23, 21, 29], '6': [31, 21, 29], '7': [1, 1, 31],
+	'8': [31, 21, 31], '9': [23, 21, 31],
+
+	'A': [30, 5, 5, 30], 'B': [31, 21, 10], 'C': [14, 17, 17], 'D': [31, 17, 14],
+	'E': [31, 21, 21], 'F': [31, 5, 5], 'G': [14, 17, 29], 'H': [31, 4, 31],
+	'I': [17, 31, 17], 'J': [24, 16, 15], 'K': [31, 4, 27], 'L': [31, 16, 16],
+	'M': [31, 2, 31], 'N': [31, 2, 4, 31], 'O': [14, 17, 14], 'P': [31, 5, 2],
+	'Q': [14, 17, 30], 'R': [31, 5, 26], 'S': [18, 21, 9], 'T': [1, 31, 1],
+	'U': [31, 16, 31], 'V': [15, 16, 15], 'W': [31, 8, 31], 'X': [27, 4, 27],
+	'Y': [3, 28, 3], 'Z': [25, 21, 19],
+
+	' ': [0], '-': [4, 4, 4], '_': [16, 16, 16], '=': [10, 10, 10],
+	'+': [4, 14, 4], '*': [10, 4, 10], '/': [24, 6, 1], '\\': [1, 6, 24],
+	'.': [16], ':': [0, 10, 0], ';': [0, 0, 0], '^': [10],
+	'℃': [3, 0, 14, 17, 17], '~': [8, 16, 8], '%': [25, 8, 19],
+	'?': [1, 21, 3], '(': [14, 17], ')': [17, 14],
+
+	'☀': [4, 21, 14, 21, 4], '☼': [17, 10, 4, 10, 17],
+	'☂': [23, 3, 23, 3, 23], '☔': [11, 3, 11, 3, 11],
+	'☁': [6, 15, 15, 6, 0], '🌥': [0, 6, 15, 15, 6],
+	'⚡': [3, 6, 28, 8, 16], '☇': [0, 6, 12, 8, 0],
+	'❄': [21, 14, 31, 14, 21], '❅': [10, 17, 14, 17, 10],
+	'🌫': [10, 10, 10, 10, 10]
+};
+
+// 与固件 write_data 相同的排版: 字符转列, 字符间 1 列空隙, 去掉尾部空隙
+function textToColumns(text) {
+	var cols = [];
+	Array.from(text || '').forEach(function(ch) {
+		var glyph = CHAR_DICT[ch] || CHAR_DICT[ch.toUpperCase()];
+		if (glyph) {
+			cols = cols.concat(glyph);
+			cols.push(0);
+		}
+	});
+	if (cols.length)
+		cols.pop();
+	return cols;
+}
+
+function drawLedFrame(canvas, cols, scrollOffset) {
+	var ctx = canvas.getContext('2d');
+	var CELL = 12, DOT = 4.2, PAD = 10;
+	var frame = new Array(27).fill(0);
+
+	if (cols.length <= 27) {
+		// 与固件 static_display 一致: 居中
+		var off = Math.floor((27 - cols.length) / 2);
+		for (var i = 0; i < cols.length; i++)
+			frame[off + i] = cols[i];
+	} else {
+		// 滚动窗口
+		for (var j = 0; j < 27; j++)
+			frame[j] = cols[(scrollOffset + j) % (cols.length + 8)] || 0;
+	}
+
+	// 屏幕底色
+	ctx.fillStyle = '#1a1a1a';
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+	for (var x = 0; x < 27; x++) {
+		for (var y = 0; y < 5; y++) {
+			var lit = (frame[x] >> y) & 1;
+			ctx.beginPath();
+			ctx.arc(PAD + x * CELL + CELL / 2, PAD + y * CELL + CELL / 2, DOT, 0, Math.PI * 2);
+			ctx.fillStyle = lit ? '#ffb020' : '#332211';
+			ctx.fill();
+			if (lit) {
+				// 轻微光晕
+				ctx.beginPath();
+				ctx.arc(PAD + x * CELL + CELL / 2, PAD + y * CELL + CELL / 2, DOT + 1.6, 0, Math.PI * 2);
+				ctx.fillStyle = 'rgba(255,176,32,0.25)';
+				ctx.fill();
+			}
+		}
+	}
+}
+
+// 组装预览区 DOM (输入框 + 点阵画布, 长文本自动滚动)
+function buildPreviewBox() {
+	var CELL = 12, PAD = 10;
+	var canvas = E('canvas', {
+		width: 27 * CELL + PAD * 2,
+		height: 5 * CELL + PAD * 2,
+		style: 'background:#1a1a1a;border-radius:8px;display:block;margin-top:8px'
+	});
+	var input = E('input', {
+		type: 'text',
+		class: 'cbi-input-text',
+		style: 'max-width:320px',
+		value: '☀25℃ 12:34',
+		placeholder: _('Type text to preview...')
+	});
+
+	var cols = textToColumns(input.value);
+	var offset = 0;
+
+	input.addEventListener('input', function() {
+		cols = textToColumns(input.value);
+		offset = 0;
+		drawLedFrame(canvas, cols, 0);
+	});
+
+	// 与固件 flow() 一致的 128ms 步进滚动
+	window.setInterval(function() {
+		if (cols.length > 27) {
+			offset = (offset + 1) % (cols.length + 8);
+			drawLedFrame(canvas, cols, offset);
+		}
+	}, 128);
+
+	drawLedFrame(canvas, cols, 0);
+
+	return E('div', { 'class': 'cbi-section' }, [
+		E('h3', {}, _('Screen Preview')),
+		E('div', { 'class': 'cbi-section-descr' },
+			_('Simulates the 27×5 LED matrix. Supports digits, A-Z and symbols; unsupported characters are skipped (same as hardware).')),
+		input,
+		canvas
+	]);
+}
+
 function callInitAction(action) {
 	return fs.exec('/etc/init.d/athena_led', [action]).then(function(res) {
 		if (res.code !== 0)
@@ -194,7 +322,7 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('athena_led', _('Athena LED Controller'),
-			_('JDCloud AX6600 LED Screen Controller (v2.4.0 — lunar/sun/MQTT/alerts, dual GPIO backend, JS UI)'));
+			_('JDCloud AX6600 LED matrix controller — dual GPIO backend, alerts, MQTT, automation.'));
 
 		// ============================================================
 		// 板块 1: 基础设置
@@ -371,6 +499,22 @@ return view.extend({
 		o.value('6', _('🌡️ DDR'));
 		o.depends({ 'temp_alert': '0', '!reverse': true });
 
+		// 🚨 [v2.5.0] 告警框架扩展
+		o = s.option(form.Flag, 'alert_wan', _('Alert on WAN Down/Up'));
+		o.default = '0';
+		o.rmempty = false;
+		o.description = _('Blink "NET DOWN" when internet is lost, show "NET OK" when restored.');
+
+		o = s.option(form.Flag, 'alert_newdev', _('Alert on New Device'));
+		o.default = '0';
+		o.rmempty = false;
+		o.description = _('Show "NEW xx:xx:xx" when an unknown device joins the network (ARP).');
+
+		o = s.option(form.Flag, 'alert_ip', _('Alert on WAN IP Change'));
+		o.default = '0';
+		o.rmempty = false;
+		o.description = _('Show the new address when the public IP changes (requires WAN IP module in use).');
+
 		// ============================================================
 		// 板块 5: 自定义内容与拓展 API
 		// ============================================================
@@ -500,7 +644,7 @@ return view.extend({
 				});
 			}, 5);
 
-			return E('div', {}, [ statusBox, mapEl ]);
+			return E('div', {}, [ statusBox, buildPreviewBox(), mapEl ]);
 		});
 	}
 });

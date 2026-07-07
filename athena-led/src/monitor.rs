@@ -4,10 +4,12 @@
 // 纯本地数据 (读 /proc、/sys)，全部瞬时返回，渲染循环可放心同步调用。
 // 🌟 网络类数据 (天气/IP/股票/HTTP/延迟) 已迁往 net_agent.rs 后台刷新
 // ==========================================
+use crate::control::Alert;
+use crate::Args;
 use chrono::{Datelike, Local, NaiveDate};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct SystemMonitor {
     net_interface: String,
@@ -38,6 +40,18 @@ pub struct SystemMonitor {
     led_last_cpu_total: u64,
     led_last_cpu_idle: u64,
     led_cpu_usage: f64,
+
+    // 🚨 [v2.5.0] 告警框架状态
+    // 温度告警 (3°C 滞回 + 60 秒节流)
+    temp_alert_on: bool,
+    last_temp_alert: Option<Instant>,
+    // WAN 断网/恢复检测 (5 秒节流)
+    wan_was_up: Option<bool>,
+    last_wan_check: Option<Instant>,
+    // 新设备接入检测 (30 秒扫描一次 ARP 表)
+    known_macs: HashSet<String>,
+    arp_initialized: bool,
+    last_arp_check: Option<Instant>,
 }
 
 impl SystemMonitor {
@@ -67,7 +81,116 @@ impl SystemMonitor {
             led_last_cpu_total: 0,
             led_last_cpu_idle: 0,
             led_cpu_usage: 0.0,
+
+            temp_alert_on: false,
+            last_temp_alert: None,
+            wan_was_up: None,
+            last_wan_check: None,
+            known_macs: HashSet::new(),
+            arp_initialized: false,
+            last_arp_check: None,
         }
+    }
+
+    // ==========================================
+    // 🚨 [v2.5.0] 告警框架: 每个模块边界调用一次，各检测项内部自带节流。
+    // 返回本轮需要插播的告警 (可能为空)
+    // ==========================================
+    pub fn poll_alerts(&mut self, args: &Args) -> Vec<Alert> {
+        let mut alerts = Vec::new();
+
+        // --- 1. 🔥 温度告警 (3°C 滞回, 告警持续期间每 60 秒最多播一次) ---
+        if args.temp_alert > 0 {
+            if let Some(t) = self.get_temp_value(&args.temp_alert_sensor) {
+                let threshold = args.temp_alert as f64;
+                if t >= threshold {
+                    self.temp_alert_on = true;
+                } else if t <= threshold - 3.0 {
+                    self.temp_alert_on = false;
+                }
+
+                if self.temp_alert_on
+                    && self.last_temp_alert.map_or(true, |i| i.elapsed() >= Duration::from_secs(60))
+                {
+                    alerts.push(Alert {
+                        text: format!("HOT {:.0}C", t),
+                        blink: true,
+                        secs: 5,
+                    });
+                    self.last_temp_alert = Some(Instant::now());
+                }
+            }
+        }
+
+        // --- 2. 🌐 WAN 断网/恢复提醒 (5 秒检测一次, 只在状态翻转时播报) ---
+        if args.alert_wan
+            && self.last_wan_check.map_or(true, |i| i.elapsed() >= Duration::from_secs(5))
+        {
+            self.last_wan_check = Some(Instant::now());
+            let up = self.check_default_route();
+            match self.wan_was_up {
+                Some(true) if !up => alerts.push(Alert {
+                    text: "NET DOWN".to_string(),
+                    blink: true,
+                    secs: 5,
+                }),
+                Some(false) if up => alerts.push(Alert {
+                    text: "NET OK".to_string(),
+                    blink: false,
+                    secs: 3,
+                }),
+                _ => {}
+            }
+            self.wan_was_up = Some(up);
+        }
+
+        // --- 3. 📱 新设备接入提醒 (30 秒扫一次 ARP, 首轮只记录不播报) ---
+        if args.alert_newdev
+            && self.last_arp_check.map_or(true, |i| i.elapsed() >= Duration::from_secs(30))
+        {
+            self.last_arp_check = Some(Instant::now());
+            let current = self.read_arp_macs();
+            if !self.arp_initialized {
+                // 启动首轮: 把现有设备全部记为已知，避免开机告警风暴
+                self.known_macs = current;
+                self.arp_initialized = true;
+            } else {
+                // 每轮最多播报 3 个，防止批量上线刷屏
+                let mut count = 0;
+                for mac in current.difference(&self.known_macs) {
+                    if count >= 3 { break; }
+                    // 显示 MAC 后三段足以辨认: "NEW DD:EE:FF"
+                    let tail = if mac.len() >= 8 { &mac[mac.len() - 8..] } else { mac.as_str() };
+                    alerts.push(Alert {
+                        text: format!("NEW {}", tail.to_uppercase()),
+                        blink: false,
+                        secs: 5,
+                    });
+                    count += 1;
+                }
+                // 记入已知集合 (取并集: 设备离线再回来不重复播报)
+                self.known_macs.extend(current);
+            }
+        }
+
+        alerts
+    }
+
+    // 读取 ARP 表中可达 (flags 0x2) 且 MAC 非全零的设备集合
+    fn read_arp_macs(&self) -> HashSet<String> {
+        let mut macs = HashSet::new();
+        if let Ok(content) = fs::read_to_string("/proc/net/arp") {
+            for line in content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4
+                    && parts[3] != "00:00:00:00:00:00"
+                    && parts[2].contains("0x2")
+                {
+                    macs.insert(parts[3].to_lowercase());
+                }
+            }
+        }
+        macs
     }
 
     // ==========================================

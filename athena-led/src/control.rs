@@ -15,6 +15,17 @@
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+// ==========================================
+// 🚨 [v2.5.0] 通用系统告警 (温度/断网/新设备/IP变化 共用一套插播机制)
+// ==========================================
+#[derive(Debug, Clone, PartialEq)]
+pub struct Alert {
+    pub text: String,
+    // true = 紧急 (闪烁 + 四状态灯全亮)；false = 通知 (静态/滚动显示)
+    pub blink: bool,
+    pub secs: u64,
+}
+
 // 调度器在每个模块边界消费的共享控制状态
 #[derive(Default)]
 pub struct ControlState {
@@ -24,6 +35,8 @@ pub struct ControlState {
     pub light_override: Option<u8>,
     // 待插播的文本: (内容, 秒数)
     pub pending_show: Option<(String, u64)>,
+    // 🌟 [v2.5.0] 系统告警队列 (net_agent 等后台任务写入，调度器边界消费)
+    pub pending_alerts: Vec<Alert>,
 }
 
 pub type SharedControl = Arc<Mutex<ControlState>>;
