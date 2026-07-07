@@ -73,56 +73,103 @@ function addModuleOptions(o) {
 	o.value('ping', _('🛰️ Network Latency'));
 	o.value('conn', _('🔗 Connection Count'));
 
-	// 6. 动画播放
+	// 🌟 6. [v2.4.0 新增]
+	o.value('lunar', _('🏮 Lunar Date'));
+	o.value('sun', _('🌅 Sunrise / Sunset'));
+	o.value('mqtt', _('📨 MQTT Message'));
+
+	// 7. 动画播放
 	o.value('anim', _('🎬 Animation (.bin)'));
 }
 
-// 二级参数：多合一动态参数列
+// ==========================================
+// 🌟 [v2.4.0 修复] 二级参数按模块类型联动
+// 以前是一个混装全部选项的大杂烩下拉 (老 CBI 单列布局的历史包袱)；
+// 现在拆成多个控件、共写同一个 UCI 字段 'param' (ucioption)，
+// depends 联动后只显示与所选模块相关的选项，无参数模块不显示参数框。
+// ==========================================
 function addModuleParams(s, netDevices, animFiles) {
-	var o = s.option(form.Value, 'param', _('Module Parameter'));
-	o.rmempty = true;
+	var o;
 
-	// 🕒 时间类参数
-	o.value('timeBlink', _('⌚ [Time] Blink (Default)'));
-	o.value('time_sec', _('⌚ [Time] HH:MM:SS'));
-	o.value('time', _('⌚ [Time] Static'));
-	o.value('date', _('📅 [Date] MM-DD'));
-	o.value('date_Y', _('📅 [Date] YYYY.MM.DD'));
-	o.value('weekday', _('🗓️ [Week] Week & Time (Cycle)'));
-	o.value('week_only', _('🗓️ [Week] Day of Week'));
+	// 所有变体的公共属性
+	function bind(opt) {
+		opt.ucioption = 'param';  // 共写 UCI 'param' 字段
+		opt.retain = true;        // 切换模块时不互相删除对方写的值
+		opt.rmempty = true;
+		opt.modalonly = true;     // 只在编辑弹窗里出现，表格列保持干净
+		return opt;
+	}
 
-	// 🌡️ 温度类参数
-	o.value('4', _('🌡️ [Temp] CPU'));
-	o.value('0', _('🌡️ [Temp] NSS-Top'));
-	o.value('1', _('🌡️ [Temp] NSS'));
-	o.value('2', _('🌡️ [Temp] Wi-Fi PHY0'));
-	o.value('3', _('🌡️ [Temp] Wi-Fi PHY1'));
-	o.value('5', _('🌡️ [Temp] LPASS'));
-	o.value('6', _('🌡️ [Temp] DDR'));
+	// 🕒 时间格式 (time_group)
+	o = bind(s.option(form.ListValue, 'param_time', _('Time Format')));
+	o.depends('module', 'time_group');
+	o.default = 'timeBlink';
+	o.value('timeBlink', _('⌚ Blink colon (Default)'));
+	o.value('time_sec', _('⌚ HH:MM:SS'));
+	o.value('time', _('⌚ Static HH:MM'));
+	o.value('date', _('📅 MM-DD'));
+	o.value('date_Y', _('📅 YYYY.MM.DD'));
+	o.value('weekday', _('🗓️ Week & Time (Cycle)'));
+	o.value('week_only', _('🗓️ Day of Week'));
 
-	// 🌐 网卡类参数 (过滤虚拟网卡)
+	// 🌡️ 温度传感器 (temp_single)
+	o = bind(s.option(form.ListValue, 'param_temp', _('Sensor')));
+	o.depends('module', 'temp_single');
+	o.default = '4';
+	o.value('4', _('🌡️ CPU'));
+	o.value('0', _('🌡️ NSS-Top'));
+	o.value('1', _('🌡️ NSS'));
+	o.value('2', _('🌡️ Wi-Fi PHY0'));
+	o.value('3', _('🌡️ Wi-Fi PHY1'));
+	o.value('5', _('🌡️ LPASS'));
+	o.value('6', _('🌡️ DDR'));
+
+	// 🌐 网卡 (流量/网速类模块)
+	o = bind(s.option(form.Value, 'param_net', _('Interface')));
+	['traffic_split', 'netspeed_down', 'netspeed_up',
+	 'traffic_down', 'traffic_up', 'traffic_total'].forEach(function(mod) {
+		o.depends('module', mod);
+	});
+	o.placeholder = 'br-lan';
 	netDevices.forEach(function(dev) {
 		var name = dev.getName();
 		if (/^(lo$|sit|gre|ifb|ip6|teql|erspan|miireg|phy)/.test(name))
 			return;
-		o.value(name, _('🌐 [Net] ') + name);
+		o.value(name);
 	});
 
-	// 🎬 动画类参数 (动态扫描 /etc/athena_led/anim/*.bin)
+	// 🎬 动画文件 (anim)
+	o = bind(s.option(form.ListValue, 'param_anim', _('Animation File')));
+	o.depends('module', 'anim');
 	animFiles.forEach(function(entry) {
 		if (entry.name && entry.name.match(/\.bin$/))
-			o.value(entry.name, _('🎬 [Anim] ') + entry.name);
+			o.value(entry.name);
 	});
 
-	// 📆 倒数日示例 (可手填任意日期)
-	o.value('2027-06-07', _('📆 [Countdown] e.g. 2027-06-07'));
-	o.value('01-01', _('📆 [Countdown] every Jan 1st'));
+	// 📆 倒数日目标 (countdown)
+	o = bind(s.option(form.Value, 'param_countdown', _('Target Date')));
+	o.depends('module', 'countdown');
+	o.placeholder = '2027-06-07';
+	o.value('2027-06-07', _('One-off: 2027-06-07'));
+	o.value('01-01', _('Yearly: every Jan 1st'));
+	o.description = _('YYYY-MM-DD for a one-off date, MM-DD to repeat every year.');
 
-	// 🛰️ 延迟目标示例
-	o.value('223.5.5.5:80', _('🛰️ [Ping] AliDNS'));
-	o.value('114.114.114.114:80', _('🛰️ [Ping] 114DNS'));
+	// 🛰️ 延迟目标 (ping)
+	o = bind(s.option(form.Value, 'param_ping', _('Ping Target')));
+	o.depends('module', 'ping');
+	o.placeholder = '223.5.5.5:80';
+	o.value('223.5.5.5:80', 'AliDNS');
+	o.value('114.114.114.114:80', '114DNS');
+	o.description = _('host[:port], measured via TCP connect. Empty = AliDNS.');
 
-	return o;
+	// 🌅 日出日落坐标 (sun)
+	o = bind(s.option(form.Value, 'param_sun', _('Coordinates')));
+	o.depends('module', 'sun');
+	o.placeholder = _('empty = auto (IP geolocation)');
+	o.value('39.90,116.40', _('Beijing'));
+	o.value('31.23,121.47', _('Shanghai'));
+	o.value('23.13,113.26', _('Guangzhou'));
+	o.description = _('"lat,lon" or leave empty for IP-based location.');
 }
 
 return view.extend({
@@ -299,6 +346,23 @@ return view.extend({
 		o.description = _('Apply for a free key at seniverse.com. No built-in key anymore.');
 		o.depends('weather_source', 'seniverse');
 
+		// 🌟 [v2.4.0] 温度告警
+		o = s.option(form.Value, 'temp_alert', _('Temp Alert Threshold (°C)'));
+		o.datatype = 'uinteger';
+		o.default = '0';
+		o.description = _('Blink a warning on screen when the sensor exceeds this temperature. 0 = disabled.');
+
+		o = s.option(form.ListValue, 'temp_alert_sensor', _('Temp Alert Sensor'));
+		o.default = '4';
+		o.value('4', _('🌡️ CPU'));
+		o.value('0', _('🌡️ NSS-Top'));
+		o.value('1', _('🌡️ NSS'));
+		o.value('2', _('🌡️ Wi-Fi PHY0'));
+		o.value('3', _('🌡️ Wi-Fi PHY1'));
+		o.value('5', _('🌡️ LPASS'));
+		o.value('6', _('🌡️ DDR'));
+		o.depends({ 'temp_alert': '0', '!reverse': true });
+
 		// ============================================================
 		// 板块 5: 自定义内容与拓展 API
 		// ============================================================
@@ -364,7 +428,33 @@ return view.extend({
 		o.description = _('HH:MM format (e.g. 07:00).');
 
 		// ============================================================
-		// 板块 8: 服务控制
+		// 板块 8: 自动化与集成 (v2.4.0 新增)
+		// ============================================================
+		s = m.section(form.NamedSection, 'general', 'settings', _('Automation & Integration'));
+		s.addremove = false;
+
+		o = s.option(form.Value, 'control_port', _('Control Port'));
+		o.datatype = 'port';
+		o.default = '0';
+		o.description = _('Runtime control interface on 127.0.0.1 (0 = disabled). Usage: echo "show 10 HELLO" | nc 127.0.0.1 PORT — commands: next / home / off / wake / toggle / light 0-7 / show SECS TEXT.');
+
+		o = s.option(form.Value, 'mqtt_broker', _('MQTT Broker'));
+		o.placeholder = '192.168.1.10:1883';
+		o.description = _('host[:port]. Leave empty to disable. Received messages show via the "MQTT Message" module.');
+
+		o = s.option(form.Value, 'mqtt_topic', _('MQTT Topic'));
+		o.default = 'athena-led/display';
+		o.depends({ 'mqtt_broker': '', '!reverse': true });
+
+		o = s.option(form.Value, 'mqtt_user', _('MQTT Username'));
+		o.depends({ 'mqtt_broker': '', '!reverse': true });
+
+		o = s.option(form.Value, 'mqtt_pass', _('MQTT Password'));
+		o.password = true;
+		o.depends({ 'mqtt_broker': '', '!reverse': true });
+
+		// ============================================================
+		// 板块 9: 服务控制
 		// ============================================================
 		s = m.section(form.NamedSection, 'general', 'settings', _('Service Control'));
 		s.addremove = false;

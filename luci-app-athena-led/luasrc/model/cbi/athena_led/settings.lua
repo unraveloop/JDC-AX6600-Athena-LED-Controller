@@ -115,6 +115,12 @@ local function add_module_options(opt)
     opt:value("ping", translate("🛰️ Network Latency"))
     opt:value("conn", translate("🔗 Connection Count"))
 
+    -- 🌟 [v2.4.0 新增] (注: 此 Lua 界面为回退备份, 主界面为 JS 版;
+    -- 温度告警/MQTT/控制接口等新配置项请用 uci 或 JS 界面设置)
+    opt:value("lunar", translate("🏮 Lunar Date"))
+    opt:value("sun", translate("🌅 Sunrise / Sunset"))
+    opt:value("mqtt", translate("📨 MQTT Message"))
+
     -- 🌟 [新增] 5. 动画播放
     opt:value("anim", translate("🎬 Animation (.bin)"))
 end

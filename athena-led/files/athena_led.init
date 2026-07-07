@@ -101,6 +101,16 @@ start_service() {
     config_get tempFlag "$cfg" 'temp_sensors' '0 1 2 3 4'
     config_get stockUrl "$cfg" 'stock_url' ''
 
+    # 🌟 [v2.4.0] 温度告警 / 控制接口 / MQTT
+    local tempAlert tempAlertSensor controlPort mqttBroker mqttTopic mqttUser mqttPass
+    config_get tempAlert "$cfg" 'temp_alert' '0'
+    config_get tempAlertSensor "$cfg" 'temp_alert_sensor' '4'
+    config_get controlPort "$cfg" 'control_port' '0'
+    config_get mqttBroker "$cfg" 'mqtt_broker' ''
+    config_get mqttTopic "$cfg" 'mqtt_topic' 'athena-led/display'
+    config_get mqttUser "$cfg" 'mqtt_user' ''
+    config_get mqttPass "$cfg" 'mqtt_pass' ''
+
     config_get_bool enableSleep "$cfg" 'enable_sleep' '0'
     config_get sleepStart "$cfg" 'off_time' ''
     config_get sleepEnd "$cfg" 'on_time' ''
@@ -184,6 +194,19 @@ start_service() {
     [ -n "$nightStart" ] && procd_append_param command --night-start "$nightStart"
     [ -n "$nightEnd" ] && procd_append_param command --night-end "$nightEnd"
     [ -n "$nightStart" ] && procd_append_param command --night-level "$nightLevel"
+
+    # 🌟 [v2.4.0] 温度告警 / 控制接口 / MQTT
+    [ "$tempAlert" != "0" ] && {
+        procd_append_param command --temp-alert "$tempAlert"
+        procd_append_param command --temp-alert-sensor "$tempAlertSensor"
+    }
+    [ "$controlPort" != "0" ] && procd_append_param command --control-port "$controlPort"
+    [ -n "$mqttBroker" ] && {
+        procd_append_param command --mqtt-broker "$mqttBroker"
+        [ -n "$mqttTopic" ] && procd_append_param command --mqtt-topic "$mqttTopic"
+        [ -n "$mqttUser" ] && procd_append_param command --mqtt-user "$mqttUser"
+        [ -n "$mqttPass" ] && procd_append_param command --mqtt-pass "$mqttPass"
+    }
 
     # LED 独立开关判断逻辑 (等于 1 才追加)
     [ "$disableLedClock" -eq 1 ] && procd_append_param command --disable-led-clock

@@ -13,6 +13,7 @@ pub fn spawn_button_listener(
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     gpio_pin: String,  // 🌟 比如 "71" (TLMM 引脚偏移，也允许直接填全局编号)
     gpio_base: String, // 🌟 "auto" 或数字，仅 debugfs 兜底路径需要换算全局编号
+    control: crate::control::SharedControl, // 🌟 [v2.4.0] 双击回首页需要写共享控制状态
 ) {
     use crate::led_screen;
     use std::fs::File;
@@ -86,6 +87,9 @@ pub fn spawn_button_listener(
         // 🌟 状态机变量
         let mut press_start: Option<Instant> = None;
         let mut long_press_handled = false;
+        // 🌟 [v2.4.0] 双击检测: 第一次短按松开后等待 350ms，
+        // 期间再次按下 = 双击 (回频道 1)；超时未按 = 单击 (切下一台)
+        let mut pending_click_deadline: Option<Instant> = None;
 
         while running.load(Ordering::SeqCst) {
             // --- 读取当前按键电平 (按下 = 物理低电平) ---
@@ -111,6 +115,20 @@ pub fn spawn_button_listener(
                 if press_start.is_none() {
                     press_start = Some(Instant::now());
                     long_press_handled = false;
+
+                    // 🌟 [双击] 在等待窗口内再次按下 = 双击，立即回频道 1
+                    if pending_click_deadline.is_some() {
+                        pending_click_deadline = None;
+                        #[cfg(debug_assertions)]
+                        println!("⏮️ [硬件交互] 双击触发！回到频道 1");
+                        if let Ok(mut st) = control.lock() {
+                            st.go_home = true;
+                        }
+                        let current = *tx.borrow();
+                        let _ = tx.send(if current < 0 { 1 } else { current + 1 });
+                        // 标记本次按压已消费，松开时不再进入单击判定
+                        long_press_handled = true;
+                    }
                 }
                 // 2️⃣ 一直按着没松手，检查是否达到长按阈值 (2 秒)
                 else if !long_press_handled {
@@ -130,24 +148,33 @@ pub fn spawn_button_listener(
                 if let Some(start) = press_start {
                     let hold_time = start.elapsed();
 
-                    // 如果没有触发过长按，并且按下的时间大于 50ms (防物理抖动)
+                    // 如果没有触发过长按/双击，并且按下的时间大于 50ms (防物理抖动)
                     if !long_press_handled && hold_time > Duration::from_millis(50) {
-                        #[cfg(debug_assertions)]
-                        println!("➡️ [硬件交互] 短按触发！准备切换频道...");
-
                         let current = *tx.borrow();
-                        // 如果当前处于休眠状态，短按直接唤醒，从 1 开始
                         if current < 0 {
+                            // 休眠状态: 任何短按立即唤醒 (不做双击等待)
                             println!("☀️ [硬件交互] 夜间休眠被打断，唤醒屏幕！");
                             let _ = tx.send(1);
+                            pending_click_deadline = None;
                         } else {
-                            // 正常切台
-                            let _ = tx.send(current + 1);
+                            // 🌟 [双击] 先挂起 350ms，看是否有第二击
+                            pending_click_deadline = Some(Instant::now() + Duration::from_millis(350));
                         }
                     }
 
                     // 重置状态机，准备迎接下一次按键
                     press_start = None;
+                }
+
+                // 🌟 [双击] 等待窗口超时且无第二击 -> 判定为单击，正常切台
+                if let Some(deadline) = pending_click_deadline {
+                    if Instant::now() >= deadline {
+                        pending_click_deadline = None;
+                        #[cfg(debug_assertions)]
+                        println!("➡️ [硬件交互] 短按触发！准备切换频道...");
+                        let current = *tx.borrow();
+                        let _ = tx.send(if current < 0 { 1 } else { current + 1 });
+                    }
                 }
             }
 
@@ -168,6 +195,7 @@ pub fn spawn_button_listener(
     _running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _gpio_pin: String,
     _gpio_base: String,
+    _control: crate::control::SharedControl,
 ) {
     // Windows 模拟器不需要物理按键监听
     println!("📺 [Windows 模拟器] 按键监听已就绪（空跑模式）");

@@ -35,7 +35,13 @@ jobs:
         with:
           workspaces: athena-led
 
-      # 🚦 门禁: 编译检查失败则拒绝合并
+      # 🚦 门禁 1: 单元测试 (农历锚点/日出日落/时间窗口/profile解析/控制指令)
+      # 在 runner 本机 (x86_64-linux) 编译执行，速度快且能真正运行断言
+      - name: cargo test
+        working-directory: ./athena-led
+        run: cargo test
+
+      # 🚦 门禁 2: 路由器目标编译检查
       - name: cargo check
         working-directory: ./athena-led
         run: cargo check --target aarch64-unknown-linux-musl

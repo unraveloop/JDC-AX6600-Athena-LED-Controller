@@ -3,8 +3,10 @@
 // 负责: Profile 解析 / 模块渲染 / 按键打断 / 定时休眠
 // 数据来自 monitor.rs，硬件输出走 led_screen
 // ==========================================
+use crate::control::SharedControl;
 use crate::led_screen;
 use crate::monitor::SystemMonitor;
+use crate::mqtt::MqttHandle;
 use crate::net_agent::NetHandle;
 use crate::Args;
 use anyhow::Result;
@@ -57,9 +59,8 @@ fn get_seconds_until_wake(wake_time_str: &str) -> u64 {
     }
 }
 
-/// 判断当前时间是否在休眠区间内
-/// 支持跨午夜设置，例如 start="23:00", end="07:00"
-fn is_sleep_time(start_str: &str, end_str: &str) -> bool {
+/// 🧪 [可测试的纯函数] 判断给定时刻是否落在时间窗口内 (支持跨午夜)
+fn is_in_window(now: NaiveTime, start_str: &str, end_str: &str) -> bool {
     // 1. 如果参数为空（LuCI未勾选），直接返回 false
     if start_str.is_empty() || end_str.is_empty() {
         return false;
@@ -68,27 +69,33 @@ fn is_sleep_time(start_str: &str, end_str: &str) -> bool {
     // 2. 尝试解析时间
     let start = match NaiveTime::parse_from_str(start_str, "%H:%M") {
         Ok(t) => t,
-        Err(_) => return false, // 格式错误当作不休眠
+        Err(_) => return false, // 格式错误当作不生效
     };
     let end = match NaiveTime::parse_from_str(end_str, "%H:%M") {
         Ok(t) => t,
         Err(_) => return false,
     };
 
-    let now = Local::now().time();
-
     // 3. 判断逻辑
     if start < end {
-        // 同一天内：例如 12:00 睡 - 14:00 醒
+        // 同一天内：例如 12:00 - 14:00
         now >= start && now < end
     } else {
-        // 跨午夜：例如 23:00 睡 - 07:00 醒
+        // 跨午夜：例如 23:00 - 07:00
         now >= start || now < end
     }
 }
 
-// 🌟 [新增] 定时亮度: 在夜间时段内使用低亮度档 (复用 is_sleep_time 的跨午夜区间判断)
-fn current_light_level(args: &Args) -> u8 {
+/// 判断当前时间是否在休眠区间内
+fn is_sleep_time(start_str: &str, end_str: &str) -> bool {
+    is_in_window(Local::now().time(), start_str, end_str)
+}
+
+// 🌟 当前应使用的亮度: 控制接口锁定 > 夜间低亮度 > 常规亮度
+fn effective_light(args: &Args, control: &SharedControl) -> u8 {
+    if let Some(level) = control.lock().ok().and_then(|st| st.light_override) {
+        return level.min(7);
+    }
     if is_sleep_time(&args.night_start, &args.night_end) {
         args.night_level.min(7)
     } else {
@@ -96,18 +103,10 @@ fn current_light_level(args: &Args) -> u8 {
     }
 }
 
-pub async fn process_loop(
-    screen: &mut led_screen::LedScreen,
-    args: &Args,
-    monitor: &mut SystemMonitor,
-    net: &NetHandle,
-    rx: &mut tokio::sync::watch::Receiver<i32>,
-) -> Result<()> {
-
-    // --- 1. 动态解析用户的智能配置 ---
+/// 🧪 [可测试的纯函数] 解析 profile 参数为频道/模块结构
+/// 语法: "模块[:参数][#时长]"，空格分隔模块，每个字符串一个频道
+fn parse_profiles(profile_args: &[String], default_secs: u64) -> Vec<ProfileConfig> {
     let mut profiles: Vec<ProfileConfig> = Vec::new();
-    let default_profiles = vec!["date timeBlink weather stock uptime netspeed_down netspeed_up cpu".to_string()];
-    let profile_args = if args.profile.is_empty() { &default_profiles } else { &args.profile };
 
     for p_str in profile_args {
         let mut modules = Vec::new();
@@ -118,9 +117,9 @@ pub async fn process_loop(
 
             // 2. 提取时长
             let duration = if parts.len() > 1 {
-                parts[1].parse::<u64>().unwrap_or(args.seconds)
+                parts[1].parse::<u64>().unwrap_or(default_secs)
             } else {
-                args.seconds
+                default_secs
             };
 
             // 🌟 3. 用 ':' 切割主体，同时生成 name 和 param
@@ -134,6 +133,24 @@ pub async fn process_loop(
         if !modules.is_empty() { profiles.push(ProfileConfig { modules }); }
     }
 
+    profiles
+}
+
+pub async fn process_loop(
+    screen: &mut led_screen::LedScreen,
+    args: &Args,
+    monitor: &mut SystemMonitor,
+    net: &NetHandle,
+    mqtt: &MqttHandle,
+    control: &SharedControl,
+    rx: &mut tokio::sync::watch::Receiver<i32>,
+) -> Result<()> {
+
+    // --- 1. 动态解析用户的智能配置 ---
+    let default_profiles = vec!["date timeBlink weather stock uptime netspeed_down netspeed_up cpu".to_string()];
+    let profile_args: &[String] = if args.profile.is_empty() { &default_profiles } else { &args.profile };
+    let profiles = parse_profiles(profile_args, args.seconds);
+
     let profiles_count = profiles.len();
     let mut current_profile_idx = 0;
 
@@ -143,6 +160,10 @@ pub async fn process_loop(
     // 🌟 [定时亮度] 当前已应用的亮度档 (main 启动时用的是 light_level)
     let mut applied_light = args.light_level;
 
+    // 🌟 [v2.4.0 温度告警] 告警状态 (3°C 滞回) 与上次插播时间
+    let mut temp_alert_on = false;
+    let mut last_alert_shown: Option<Instant> = None;
+
     // --- 2. 状态机死循环 ---
     loop {
         // 🌟 [处理长按息屏] (由监听器发送 -1 触发)
@@ -151,7 +172,7 @@ pub async fn process_loop(
             screen.power(false, 0).unwrap_or_default();
             // 陷入沉睡，直到监听到大于 0 的短按唤醒信号
             let _ = rx.wait_for(|&val| val > 0).await;
-            applied_light = current_light_level(args);
+            applied_light = effective_light(args, control);
             screen.power(true, applied_light).unwrap_or_default();
             continue;
         }
@@ -168,7 +189,7 @@ pub async fn process_loop(
             tokio::select! {
                 // 1. 正常睡到天亮自动醒
                 _ = tokio::time::sleep(tokio::time::Duration::from_secs(sleep_sec)) => {
-                    applied_light = current_light_level(args);
+                    applied_light = effective_light(args, control);
                     screen.power(true, applied_light).unwrap_or_default();
                     continue;
                 }
@@ -176,7 +197,7 @@ pub async fn process_loop(
                 Ok(_) = rx.changed() => {
                     // 赋予 60 秒免死金牌，这 60 秒内正常轮播配置
                     manual_wake_expire = Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
-                    applied_light = current_light_level(args);
+                    applied_light = effective_light(args, control);
                     screen.power(true, applied_light).unwrap_or_default();
                     continue;
                 }
@@ -197,8 +218,8 @@ pub async fn process_loop(
             let mut text_to_show = String::new();
             let mut module_interrupted = false;
 
-            // 🌟 [定时亮度] 每个模块边界检查一次：跨入/离开夜间时段时自动调整
-            let desired_light = current_light_level(args);
+            // 🌟 [定时亮度/亮度锁定] 每个模块边界检查一次
+            let desired_light = effective_light(args, control);
             if desired_light != applied_light {
                 let _ = screen.power(true, desired_light);
                 applied_light = desired_light;
@@ -214,6 +235,64 @@ pub async fn process_loop(
                 if args.disable_led_down  { raw_flag &= !8; } // 8: 下箭头
                 raw_flag
             };
+
+            // ==========================================
+            // 📢 [v2.4.0 插播 1] 控制接口 show 指令 (HA/脚本通知上屏)
+            // 插播完成后回到正常轮播，不消耗轮播位
+            // ==========================================
+            let show_req = control.lock().ok().and_then(|mut st| st.pending_show.take());
+            if let Some((text, secs)) = show_req {
+                println!("📢 [插播] 显示 {} 秒: {}", secs, text);
+                let show_start = Instant::now();
+                let mut show_interrupted = false;
+                while show_start.elapsed() < Duration::from_secs(secs) {
+                    tokio::select! {
+                        _ = async {
+                            let _ = screen.write_data(text.as_bytes(), get_leds(monitor, args)).await;
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        } => {}
+                        Ok(_) = rx.changed() => { show_interrupted = true; break; }
+                    }
+                }
+                if show_interrupted && *rx.borrow() < 0 { break; } // 长按息屏
+                // 继续渲染当前模块
+            }
+
+            // ==========================================
+            // 🔥 [v2.4.0 插播 2] 温度告警: 超阈值闪烁警示
+            // 3°C 滞回防抖动，告警持续期间每 60 秒最多插播一次 (5 秒)
+            // ==========================================
+            if args.temp_alert > 0 {
+                if let Some(t) = monitor.get_temp_value(&args.temp_alert_sensor) {
+                    let threshold = args.temp_alert as f64;
+                    if t >= threshold {
+                        temp_alert_on = true;
+                    } else if t <= threshold - 3.0 {
+                        temp_alert_on = false;
+                    }
+
+                    if temp_alert_on
+                        && last_alert_shown.map_or(true, |i| i.elapsed() >= Duration::from_secs(60))
+                    {
+                        println!("🔥 [告警] 温度 {:.1}°C 超过阈值 {}°C，插播警示", t, args.temp_alert);
+                        let alert_start = Instant::now();
+                        let mut blink = true;
+                        let mut alert_interrupted = false;
+                        while alert_start.elapsed() < Duration::from_secs(5) {
+                            let text = if blink { format!("HOT {:.0}C", t) } else { String::new() };
+                            // 状态灯全亮 (15 = 四灯) 强化警示
+                            let _ = screen.write_data(text.as_bytes(), 15).await;
+                            blink = !blink;
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_millis(400)) => {}
+                                Ok(_) = rx.changed() => { alert_interrupted = true; break; }
+                            }
+                        }
+                        last_alert_shown = Some(Instant::now());
+                        if alert_interrupted && *rx.borrow() < 0 { break; }
+                    }
+                }
+            }
 
             // 提取静态文本
             match module.name.as_str() {
@@ -260,6 +339,19 @@ pub async fn process_loop(
                 "countdown" => text_to_show = monitor.get_countdown(&module.param),
                 "ping" => text_to_show = net.ping(&module.param),
                 "conn" => text_to_show = monitor.get_conntrack(),
+
+                // ==========================================
+                // 🌟 [v2.4.0 新功能模块] 农历 / 日出日落 / MQTT
+                // ==========================================
+                "lunar" => text_to_show = crate::lunar::today_string(),
+                "sun" => {
+                    // 参数填 "lat,lon" 本地直算; 留空用 IP 定位 (后台代理提供)
+                    text_to_show = match crate::sun::parse_coords(&module.param) {
+                        Some((lat, lon)) => crate::sun::today_string(lat, lon),
+                        None => net.sun(),
+                    };
+                }
+                "mqtt" => text_to_show = mqtt.text(),
 
                 "banner" => {
                     if !args.custom_text.is_empty() { text_to_show = args.custom_text.clone(); }
@@ -454,6 +546,19 @@ pub async fn process_loop(
                 let new_val = *rx.borrow();
                 if new_val < 0 { break; } // 长按息屏，回溯外层休眠
 
+                // 🌟 [v2.4.0] 双击按键 / home 指令: 回到频道 1
+                let go_home = control.lock().map(|mut st| std::mem::take(&mut st.go_home)).unwrap_or(false);
+                if go_home {
+                    current_profile_idx = 0;
+                    switched_by_button = true;
+                    break;
+                }
+                // 🌟 [v2.4.0] show 插播待处理: 打断只为尽快回到边界，不换台
+                if control.lock().map(|st| st.pending_show.is_some()).unwrap_or(false) {
+                    switched_by_button = true;
+                    break;
+                }
+
                 if profiles_count == 1 {
                     module_idx += 1; // 只有1个配置：行为=切歌
                 } else {
@@ -524,6 +629,18 @@ pub async fn process_loop(
                     let new_val = *rx.borrow();
                     if new_val < 0 { break; }
 
+                    // 🌟 [v2.4.0] 双击回首页 / show 插播 (同上)
+                    let go_home = control.lock().map(|mut st| std::mem::take(&mut st.go_home)).unwrap_or(false);
+                    if go_home {
+                        current_profile_idx = 0;
+                        switched_by_button = true;
+                        break;
+                    }
+                    if control.lock().map(|st| st.pending_show.is_some()).unwrap_or(false) {
+                        switched_by_button = true;
+                        break;
+                    }
+
                     if profiles_count == 1 {
                         module_idx += 1;
                     } else {
@@ -548,5 +665,77 @@ pub async fn process_loop(
         if !switched_by_button && pass_start.elapsed() < Duration::from_millis(300) {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
+    }
+}
+
+// ==========================================
+// 🧪 单元测试
+// ==========================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t(h: u32, m: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, 0).unwrap()
+    }
+
+    #[test]
+    fn window_same_day() {
+        // 12:00 - 14:00
+        assert!(is_in_window(t(12, 0), "12:00", "14:00"));  // 边界起点含
+        assert!(is_in_window(t(13, 30), "12:00", "14:00"));
+        assert!(!is_in_window(t(14, 0), "12:00", "14:00")); // 边界终点不含
+        assert!(!is_in_window(t(11, 59), "12:00", "14:00"));
+    }
+
+    #[test]
+    fn window_cross_midnight() {
+        // 23:00 - 07:00 (跨午夜)
+        assert!(is_in_window(t(23, 30), "23:00", "07:00"));
+        assert!(is_in_window(t(2, 0), "23:00", "07:00"));
+        assert!(is_in_window(t(6, 59), "23:00", "07:00"));
+        assert!(!is_in_window(t(7, 0), "23:00", "07:00"));
+        assert!(!is_in_window(t(12, 0), "23:00", "07:00"));
+    }
+
+    #[test]
+    fn window_disabled_or_invalid() {
+        assert!(!is_in_window(t(12, 0), "", "14:00"));       // 未配置
+        assert!(!is_in_window(t(12, 0), "12:00", ""));
+        assert!(!is_in_window(t(12, 0), "banana", "14:00")); // 格式错误
+    }
+
+    #[test]
+    fn profiles_full_syntax() {
+        let input = vec![
+            "time_group:time_sec#10 weather#10".to_string(),
+            "cpu#5 temp_single:4#5".to_string(),
+        ];
+        let p = parse_profiles(&input, 7);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].modules.len(), 2);
+        assert_eq!(p[0].modules[0].name, "time_group");
+        assert_eq!(p[0].modules[0].param, "time_sec");
+        assert_eq!(p[0].modules[0].duration, 10);
+        assert_eq!(p[1].modules[1].name, "temp_single");
+        assert_eq!(p[1].modules[1].param, "4");
+    }
+
+    #[test]
+    fn profiles_defaults_and_edge() {
+        // 无参数无时长 -> 默认时长, 空参数
+        let p = parse_profiles(&vec!["cpu mem".to_string()], 5);
+        assert_eq!(p[0].modules[0].duration, 5);
+        assert_eq!(p[0].modules[0].param, "");
+        // 时长非法 -> 回落默认
+        let p = parse_profiles(&vec!["cpu#abc".to_string()], 5);
+        assert_eq!(p[0].modules[0].duration, 5);
+        // 空频道字符串被丢弃
+        let p = parse_profiles(&vec!["  ".to_string(), "cpu".to_string()], 5);
+        assert_eq!(p.len(), 1);
+        // 带冒号参数含日期 (countdown:2027-06-07#5)
+        let p = parse_profiles(&vec!["countdown:2027-06-07#5".to_string()], 5);
+        assert_eq!(p[0].modules[0].name, "countdown");
+        assert_eq!(p[0].modules[0].param, "2027-06-07");
     }
 }

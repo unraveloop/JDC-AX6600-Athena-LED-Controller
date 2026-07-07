@@ -5,9 +5,12 @@
 //   led_screen_sim.rs — Windows 本地调试用虚拟屏幕
 //   char_dict.rs      — 点阵字模字典
 //   monitor.rs        — 本地系统数据采集 (CPU/内存/温度/网速...)
-//   net_agent.rs      — 后台网络数据代理 (天气/IP/股票/HTTP/延迟)
-//   scheduler.rs      — 轮播调度引擎 (Profile 解析/渲染/休眠)
-//   button.rs         — 物理按键监听 (长短按分离)
+//   net_agent.rs      — 后台网络数据代理 (天气/IP/股票/HTTP/延迟/日出日落)
+//   scheduler.rs      — 轮播调度引擎 (Profile 解析/渲染/休眠/插播)
+//   button.rs         — 物理按键监听 (长按/短按/双击)
+//   control.rs        — 运行时控制接口 (127.0.0.1 TCP)
+//   mqtt.rs           — MQTT 订阅上屏 (HA 集成)
+//   lunar.rs / sun.rs — 农历 / 日出日落 (纯本地计算)
 // ==========================================
 #[cfg(unix)]
 mod led_screen;
@@ -18,9 +21,13 @@ mod led_screen;
 mod char_dict;
 
 mod button;
+mod control;
+mod lunar;
 mod monitor;
+mod mqtt;
 mod net_agent;
 mod scheduler;
+mod sun;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -144,6 +151,35 @@ pub struct Args {
 
     #[arg(long)]
     pub disable_led_down: bool,  // 禁用下箭头 (下载)
+
+    // ==========================================
+    // 🌟 [v2.4.0 新增]
+    // ==========================================
+    // 温度告警阈值 (°C)，0 = 关闭。超过阈值时插播闪烁警示 (3°C 滞回)
+    #[arg(long, default_value_t = 0)]
+    pub temp_alert: u32,
+
+    // 温度告警监控的传感器 ID (thermal_zone 编号，AX6600 CPU = 4)
+    #[arg(long, default_value = "4")]
+    pub temp_alert_sensor: String,
+
+    // 运行时控制接口端口 (监听 127.0.0.1，0 = 关闭)
+    // 用法: echo "show 10 HELLO" | nc 127.0.0.1 <端口>
+    #[arg(long, default_value_t = 0)]
+    pub control_port: u16,
+
+    // MQTT 集成 (broker 为空 = 关闭)。配合 "mqtt" 显示模块使用
+    #[arg(long, default_value = "")]
+    pub mqtt_broker: String, // host 或 host:port (默认 1883)
+
+    #[arg(long, default_value = "athena-led/display")]
+    pub mqtt_topic: String,
+
+    #[arg(long, default_value = "")]
+    pub mqtt_user: String,
+
+    #[arg(long, default_value = "")]
+    pub mqtt_pass: String,
 }
 
 // ==========================================
@@ -205,13 +241,28 @@ async fn main() -> Result<()> {
     // 渲染循环只读快照，彻底告别"缓存过期瞬间屏幕冻结 30 秒"
     let net = net_agent::spawn_net_agent(args.clone());
 
+    // 🌟 [v2.4.0] MQTT 集成 (broker 未配置时零开销)
+    let mqtt = mqtt::spawn_mqtt(&args.mqtt_broker, &args.mqtt_topic, &args.mqtt_user, &args.mqtt_pass);
+
     // 初始化通信频道
     let (tx, mut rx) = tokio::sync::watch::channel(1i32);
+
+    // 🌟 [v2.4.0] 共享控制状态 (按键双击 / 控制接口共用)
+    let control_state = control::new_shared();
+
+    // 🌟 [v2.4.0] 运行时控制接口 (port=0 时不启动)
+    control::spawn_control_server(args.control_port, tx.clone(), std::sync::Arc::clone(&control_state));
 
     // ==========================================
     // 🌟 启动监听器（有且只能调用一次！）
     // ==========================================
-    button::spawn_button_listener(tx.clone(), running_for_listener, args.button_gpio.clone(), args.gpio_base.clone());
+    button::spawn_button_listener(
+        tx.clone(),
+        running_for_listener,
+        args.button_gpio.clone(),
+        args.gpio_base.clone(),
+        std::sync::Arc::clone(&control_state),
+    );
 
     loop {
         tokio::select! {
@@ -239,7 +290,7 @@ async fn main() -> Result<()> {
             },
 
             // 赛道 3：进入超级调度引擎 (死循环)
-            _ = scheduler::process_loop(&mut screen, &args, &mut monitor, &net, &mut rx) => {
+            _ = scheduler::process_loop(&mut screen, &args, &mut monitor, &net, &mqtt, &control_state, &mut rx) => {
                 // 如果 process_loop 意外崩溃退出了，就在这里打个日志，然后重新进入下一次 loop 恢复运行
                 println!("⚠️ [警告] 渲染引擎意外退出，准备自动重启渲染循环...");
             },

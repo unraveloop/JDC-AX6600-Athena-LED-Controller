@@ -117,6 +117,7 @@ struct NetSnapshot {
     http_text: String,
     stock: String,
     pings: HashMap<String, String>, // 目标 -> "P:23ms"
+    sun: String,                    // "6:02~19:23" (由 IP 定位经纬度计算)
 }
 
 impl Default for NetSnapshot {
@@ -127,6 +128,7 @@ impl Default for NetSnapshot {
             http_text: String::new(),
             stock: String::new(),
             pings: HashMap::new(),
+            sun: "SUN:--".to_string(),
         }
     }
 }
@@ -154,6 +156,22 @@ impl NetHandle {
             .and_then(|s| s.pings.get(target).cloned())
             .unwrap_or_else(|| "P:Wait".to_string())
     }
+    pub fn sun(&self) -> String {
+        self.0.read().map(|s| s.sun.clone()).unwrap_or_else(|_| "SUN:--".into())
+    }
+}
+
+// 从 JSON 文本中提取数字字段 (轻量解析，无需完整反序列化)
+fn extract_json_number(text: &str, key: &str) -> Option<f64> {
+    let pattern = format!("\"{}\"", key);
+    let after = text.split(&pattern).nth(1)?;
+    let after_colon = after.split(':').nth(1)?;
+    let num_str: String = after_colon
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .collect();
+    num_str.parse().ok()
 }
 
 // ==========================================
@@ -168,6 +186,7 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
     let mut want_ip = false;
     let mut want_http = false;
     let mut want_stock = false;
+    let mut want_sun = false;
     let mut ping_targets: Vec<String> = Vec::new();
 
     for p_str in &args.profile {
@@ -182,6 +201,12 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
                 "ip" => want_ip = true,
                 "http_custom" => want_http = true,
                 "stock" => want_stock = true,
+                // sun 带手动经纬度参数时本地直算，无需代理；仅无参数时走 IP 定位
+                "sun" => {
+                    if param.is_empty() {
+                        want_sun = true;
+                    }
+                }
                 "ping" => {
                     let t = param.to_string();
                     if !ping_targets.contains(&t) {
@@ -194,14 +219,15 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
     }
 
     println!(
-        "🛰️ [网络代理] 启动后台刷新 (weather={}, ip={}, http={}, stock={}, ping×{})",
-        want_weather, want_ip, want_http, want_stock, ping_targets.len()
+        "🛰️ [网络代理] 启动后台刷新 (weather={}, ip={}, http={}, stock={}, sun={}, ping×{})",
+        want_weather, want_ip, want_http, want_stock, want_sun, ping_targets.len()
     );
 
     tokio::spawn(async move {
         let mut agent = NetAgent::new();
         let mut last_stock: Option<Instant> = None;
         let mut last_ping: Option<Instant> = None;
+        let mut last_sun_day: Option<chrono::NaiveDate> = None;
 
         loop {
             // 各数据源的节流策略在 agent 方法内部 (天气 30min 缓存 + 120s 失败退避、
@@ -245,6 +271,19 @@ pub fn spawn_net_agent(args: Args) -> NetHandle {
                 last_ping = Some(Instant::now());
             }
 
+            // 🌅 日出日落: 拿到 IP 定位坐标后本地计算，跨天自动重算
+            if want_sun {
+                agent.ensure_location().await;
+                if let Some((lat, lon)) = agent.coords {
+                    let today = chrono::Local::now().date_naive();
+                    if last_sun_day != Some(today) {
+                        let text = crate::sun::today_string(lat, lon);
+                        if let Ok(mut s) = snapshot.write() { s.sun = text; }
+                        last_sun_day = Some(today);
+                    }
+                }
+            }
+
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
@@ -272,6 +311,10 @@ struct NetAgent {
 
     // 天气 api 获取定位城市
     auto_location: String,
+    // 🌟 [v2.4.0] IP 定位经纬度 (供日出日落计算)
+    coords: Option<(f64, f64)>,
+    // 定位失败的重试节流
+    last_geo_attempt: Option<Instant>,
 
     last_stock_price: f64,
 }
@@ -294,7 +337,80 @@ impl NetAgent {
             http_cache_text: String::new(),
             http_cache_time: Instant::now(),
             auto_location: String::new(),
+            coords: None,
+            last_geo_attempt: None,
             last_stock_price: 0.0,
+        }
+    }
+
+    // ==========================================
+    // 🌍 IP 自动定位 (双源: 紫辰 主 / ip-api.com 备)
+    // 同时提取城市名 (天气用) 与经纬度 (日出日落用)；
+    // 失败后 10 分钟内不重试，防止无谓请求
+    // ==========================================
+    async fn ensure_location(&mut self) {
+        // 城市和坐标都拿到了就不再请求
+        if !self.auto_location.is_empty() && self.coords.is_some() {
+            return;
+        }
+        if let Some(last) = self.last_geo_attempt {
+            if last.elapsed() < Duration::from_secs(600) {
+                return;
+            }
+        }
+        self.last_geo_attempt = Some(Instant::now());
+
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Athena-LED/2.0")
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default();
+
+        let geo_sources = [
+            "http://app.zichen.zone/api/geoip/api.php",
+            "http://ip-api.com/json/?lang=zh-CN&fields=city,lat,lon",
+        ];
+        for geo_url in geo_sources {
+            match client.get(geo_url).send().await {
+                Ok(resp) => {
+                    if let Ok(text) = resp.text().await {
+                        #[cfg(debug_assertions)]
+                        println!("🌍 [定位调试] {} 原始返回: {}", geo_url, text);
+
+                        // 提取 city (两个接口都是 JSON 且都有 "city" 字段)
+                        if self.auto_location.is_empty() {
+                            if let Some(city_part) = text.split("\"city\"").nth(1) {
+                                if let Some(city) = city_part.split('"').nth(1) {
+                                    let trimmed = city.trim().to_string();
+                                    if !trimmed.is_empty() {
+                                        self.auto_location = trimmed;
+                                        #[cfg(debug_assertions)]
+                                        println!("✅ [定位成功] 城市: {}", self.auto_location);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 🌟 提取经纬度 (ip-api 一定有; 其他源有则取)
+                        if self.coords.is_none() {
+                            if let (Some(lat), Some(lon)) = (
+                                extract_json_number(&text, "lat"),
+                                extract_json_number(&text, "lon"),
+                            ) {
+                                if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
+                                    self.coords = Some((lat, lon));
+                                    println!("✅ [定位] 坐标: {:.2},{:.2}", lat, lon);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => println!("❌ [定位失败] {} 请求报错: {}", geo_url, e),
+            }
+            // 城市和坐标都齐了就提前收工
+            if !self.auto_location.is_empty() && self.coords.is_some() {
+                break;
+            }
         }
     }
 
@@ -459,48 +575,11 @@ impl NetAgent {
         self.last_weather_attempt = Some(Instant::now());
 
         // ==========================================
-        // 🌟 IP 自动定位 (双源加固版)
+        // 🌟 IP 自动定位 (双源加固版, 与日出日落共享 ensure_location)
         // ==========================================
         let mut target_location = location.to_string();
         if target_location.to_lowercase() == "auto" || target_location.is_empty() {
-            if self.auto_location.is_empty() {
-                let client = reqwest::Client::builder()
-                    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Athena-LED/2.0")
-                    .timeout(std::time::Duration::from_secs(5))
-                    .build()
-                    .unwrap_or_default();
-
-                // 双源定位：紫辰 (主) -> ip-api.com (备)
-                let geo_sources = [
-                    "http://app.zichen.zone/api/geoip/api.php",
-                    "http://ip-api.com/json/?lang=zh-CN&fields=city",
-                ];
-                for geo_url in geo_sources {
-                    match client.get(geo_url).send().await {
-                        Ok(resp) => {
-                            if let Ok(text) = resp.text().await {
-                                #[cfg(debug_assertions)]
-                                println!("🌍 [定位调试] {} 原始返回: {}", geo_url, text);
-
-                                // 提取 city (两个接口都是 JSON 且都有 "city" 字段)
-                                if let Some(city_part) = text.split("\"city\"").nth(1) {
-                                    if let Some(city) = city_part.split('"').nth(1) {
-                                        let trimmed = city.trim().to_string();
-                                        if !trimmed.is_empty() {
-                                            self.auto_location = trimmed;
-                                            #[cfg(debug_assertions)]
-                                            println!("✅ [定位成功] 城市: {}", self.auto_location);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => println!("❌ [定位失败] {} 请求报错: {}", geo_url, e),
-                    }
-                    // 主源已成功，无需再打备用源
-                    if !self.auto_location.is_empty() { break; }
-                }
-            }
+            self.ensure_location().await;
 
             // 兜底策略
             target_location = if self.auto_location.is_empty() {

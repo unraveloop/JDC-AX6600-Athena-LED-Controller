@@ -76,6 +76,16 @@ athena-led [选项]
 | `countdown:<日期>` | - | 倒数日模块。`countdown:2027-06-07`(一次性) 或 `countdown:01-01`(每年循环)，显示 `D-123` | - |
 | `ping:<host[:port]>` | - | 网络延迟模块 (TCP 连接耗时)。留空默认阿里 DNS，显示 `P:23ms` | - |
 | `conn` | - | 连接数模块 (nf_conntrack)，显示 `CT:1234` | - |
+| **新功能模块 (v2.4.0)** |  |  |  |
+| `lunar` | - | 农历日期，显示 `L:5.7`(五月初七)，闰月 `L:R6.15` | - |
+| `sun[:lat,lon]` | - | 日出日落，显示 `6:02~19:23`。参数留空用 IP 定位 | - |
+| `mqtt` | - | 显示 MQTT 订阅收到的最新消息 (需配置 broker) | - |
+| **自动化 (v2.4.0)** |  |  |  |
+| `--temp-alert <°C>` | `0` | 温度告警阈值，超过时插播闪烁警示 (0=关，3°C 滞回) | `temp_alert` |
+| `--temp-alert-sensor <ID>` | `4` | 告警监控的 thermal_zone 编号 | `temp_alert_sensor` |
+| `--control-port <PORT>` | `0` | 运行时控制接口 (仅监听 127.0.0.1)。用法: `echo "show 10 HI" \| nc 127.0.0.1 端口`，指令: next / home / off / wake / toggle / light 0-7 / show 秒 文本 | `control_port` |
+| `--mqtt-broker <host[:port]>` | `""` | MQTT broker 地址 (空 = 关闭) | `mqtt_broker` |
+| `--mqtt-topic <topic>` | `athena-led/display` | 订阅主题，收到的消息经 `mqtt` 模块上屏 | `mqtt_topic` |
 | **网络与系统** |  |  |  |
 | `--net-interface <STR>` | `br-lan` | 用于检测网速的网络接口名称 | `net_interface` |
 | `--ip-url <URL>` | *(见代码)* | 用于查询 WAN IP 的 API 地址 | `ip_url` |

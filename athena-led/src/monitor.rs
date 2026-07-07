@@ -527,42 +527,17 @@ impl SystemMonitor {
     // 显示: D-123 (还有123天) / D-DAY (就是今天) / D+5 (已过5天)
     // ==========================================
     pub fn get_countdown(&self, param: &str) -> String {
-        let param = param.trim();
-        if param.is_empty() {
-            return "NO DATE".to_string();
-        }
+        countdown_for(Local::now().date_naive(), param)
+    }
 
-        let today = Local::now().date_naive();
-
-        let target = if param.len() <= 5 {
-            // "MM-DD" 格式: 自动找最近的下一次 (今年已过就算明年的)
-            NaiveDate::parse_from_str(&format!("{}-{}", today.year(), param), "%Y-%m-%d")
-                .ok()
-                .map(|d| {
-                    if d < today {
-                        d.with_year(today.year() + 1).unwrap_or(d)
-                    } else {
-                        d
-                    }
-                })
-        } else {
-            // "YYYY-MM-DD" 完整日期
-            NaiveDate::parse_from_str(param, "%Y-%m-%d").ok()
-        };
-
-        match target {
-            Some(date) => {
-                let days = (date - today).num_days();
-                if days == 0 {
-                    "D-DAY".to_string()
-                } else if days > 0 {
-                    format!("D-{}", days)
-                } else {
-                    format!("D+{}", -days)
-                }
-            }
-            None => "D:Err".to_string(),
-        }
+    // ==========================================
+    // 🌟 [v2.4.0 新增] 读取传感器温度数值 (供温度告警判断)
+    // ==========================================
+    pub fn get_temp_value(&self, sensor_id: &str) -> Option<f64> {
+        let path = format!("/sys/class/thermal/thermal_zone{}/temp", sensor_id);
+        let raw: f64 = fs::read_to_string(&path).ok()?.trim().parse().ok()?;
+        // OpenWrt 通常为毫摄氏度
+        Some(if raw > 1000.0 { raw / 1000.0 } else { raw })
     }
 
     // ==========================================
@@ -582,6 +557,44 @@ impl SystemMonitor {
             }
         }
         "CT:Err".to_string()
+    }
+}
+
+// 🌟 倒数日的纯函数实现 (与"今天"解耦，方便单元测试)
+fn countdown_for(today: NaiveDate, param: &str) -> String {
+    let param = param.trim();
+    if param.is_empty() {
+        return "NO DATE".to_string();
+    }
+
+    let target = if param.len() <= 5 {
+        // "MM-DD" 格式: 自动找最近的下一次 (今年已过就算明年的)
+        NaiveDate::parse_from_str(&format!("{}-{}", today.year(), param), "%Y-%m-%d")
+            .ok()
+            .map(|d| {
+                if d < today {
+                    d.with_year(today.year() + 1).unwrap_or(d)
+                } else {
+                    d
+                }
+            })
+    } else {
+        // "YYYY-MM-DD" 完整日期
+        NaiveDate::parse_from_str(param, "%Y-%m-%d").ok()
+    };
+
+    match target {
+        Some(date) => {
+            let days = (date - today).num_days();
+            if days == 0 {
+                "D-DAY".to_string()
+            } else if days > 0 {
+                format!("D-{}", days)
+            } else {
+                format!("D+{}", -days)
+            }
+        }
+        None => "D:Err".to_string(),
     }
 }
 
@@ -606,5 +619,50 @@ fn format_bytes_total(bytes: u64) -> String {
         format!("{:.1}M", b / 1_048_576.0)
     } else {
         format!("{:.0}K", b / 1024.0)
+    }
+}
+
+// ==========================================
+// 🧪 单元测试
+// ==========================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(y: i32, m: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, day).unwrap()
+    }
+
+    #[test]
+    fn countdown_full_date() {
+        let today = d(2026, 7, 7);
+        assert_eq!(countdown_for(today, "2026-07-17"), "D-10");
+        assert_eq!(countdown_for(today, "2026-07-07"), "D-DAY");
+        assert_eq!(countdown_for(today, "2026-07-01"), "D+6");
+    }
+
+    #[test]
+    fn countdown_yearly_recurring() {
+        let today = d(2026, 7, 7);
+        // 今年还没到: 直接算今年的
+        assert_eq!(countdown_for(today, "12-25"), "D-171");
+        // 今年已过: 自动滚到明年 (2027-01-01 距 2026-07-07 共 178 天)
+        assert_eq!(countdown_for(today, "01-01"), "D-178");
+    }
+
+    #[test]
+    fn countdown_invalid() {
+        let today = d(2026, 7, 7);
+        assert_eq!(countdown_for(today, ""), "NO DATE");
+        assert_eq!(countdown_for(today, "13-99"), "D:Err");
+        assert_eq!(countdown_for(today, "hello"), "D:Err");
+    }
+
+    #[test]
+    fn bytes_formatting() {
+        assert_eq!(format_bytes_speed(500.0), "500B");
+        assert_eq!(format_bytes_speed(2048.0), "2K");
+        assert_eq!(format_bytes_speed(2_097_152.0), "2.0M");
+        assert_eq!(format_bytes_total(2_147_483_648), "2.00G");
     }
 }
