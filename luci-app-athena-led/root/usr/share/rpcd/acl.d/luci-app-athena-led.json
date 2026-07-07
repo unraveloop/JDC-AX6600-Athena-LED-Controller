@@ -1,0 +1,20 @@
+{
+	"luci-app-athena-led": {
+		"description": "Grant access to Athena LED configuration",
+		"read": {
+			"uci": [ "athena_led" ],
+			"file": {
+				"/var/run/athena-led.pid": [ "read" ],
+				"/proc/*/stat": [ "stat" ],
+				"/etc/athena_led/anim": [ "list" ]
+			}
+		},
+		"write": {
+			"uci": [ "athena_led" ],
+			"file": {
+				"/etc/init.d/athena_led": [ "exec" ],
+				"/etc/init.d/athena_led *": [ "exec" ]
+			}
+		}
+	}
+}

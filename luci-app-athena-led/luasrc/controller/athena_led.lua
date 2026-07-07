@@ -27,15 +27,36 @@ end
 
 function act_status()
     local e = {}
-    -- 获取真实 PID 字符串 (去掉末尾的换行符)
-    local pid = sys.exec("pgrep -f /usr/bin/athena-led | head -n 1")
-    if pid and pid ~= "" then
-        e.running = true
-        e.pid = string.gsub(pid, "\n", "")
-    else
-        e.running = false
+    e.running = false
+
+    -- 🌟 [改进] 优先读程序自己写的 PID 文件并校验进程存活。
+    -- pgrep -f 在进程崩溃循环 (procd respawn) 时会误报“运行中”，只作兜底
+    local pf = io.open("/var/run/athena-led.pid", "r")
+    if pf then
+        local pid = pf:read("*l")
+        pf:close()
+        if pid and pid:match("^%d+$") then
+            local cf = io.open("/proc/" .. pid .. "/cmdline", "r")
+            if cf then
+                local cmd = cf:read("*a") or ""
+                cf:close()
+                if cmd:find("athena%-led") then
+                    e.running = true
+                    e.pid = pid
+                end
+            end
+        end
     end
-    
+
+    -- 兜底: 老版本核心程序没有写 PID 文件
+    if not e.running then
+        local pid = sys.exec("pgrep -f /usr/bin/athena-led | head -n 1")
+        if pid and pid ~= "" then
+            e.running = true
+            e.pid = string.gsub(pid, "\n", "")
+        end
+    end
+
     http.prepare_content("application/json")
     http.write_json(e)
 end

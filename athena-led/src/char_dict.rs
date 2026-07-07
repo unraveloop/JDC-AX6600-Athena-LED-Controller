@@ -17,7 +17,13 @@ pub static CHAR_DICT: Lazy<HashMap<char, Vec<u8>>> = Lazy::new(|| {
     dict.insert('9', vec![0b00010111, 0b00010101, 0b00011111]);
     
     // --- Letters (字母) ---
-    dict.insert('A', vec![0b00011110, 0b00000101, 0b00011110]);
+    // 🌟 [字体优化] A 加宽到 4 列，顶部圆角 + 完整横梁，远看不再和 M/H 混淆
+    // .XX.
+    // X..X
+    // XXXX
+    // X..X
+    // X..X
+    dict.insert('A', vec![0b00011110, 0b00000101, 0b00000101, 0b00011110]);
     dict.insert('B', vec![0b00011111, 0b00010101, 0b00001010]);
     dict.insert('C', vec![0b00001110, 0b00010001, 0b00010001]);
     dict.insert('D', vec![0b00011111, 0b00010001, 0b00001110]);
@@ -30,14 +36,23 @@ pub static CHAR_DICT: Lazy<HashMap<char, Vec<u8>>> = Lazy::new(|| {
     dict.insert('K', vec![0b00011111, 0b00000100, 0b00011011]);
     dict.insert('L', vec![0b00011111, 0b00010000, 0b00010000]);
     dict.insert('M', vec![0b00011111, 0b00000010, 0b00011111]);
-    dict.insert('N', vec![0b00011111, 0b00000011, 0b00011100]);
+    // 🌟 [字体优化] N 加宽到 4 列，画出真正的斜对角线
+    // 旧版 3 列的 N (左竖+断层) 几乎认不出来，用户吐槽最狠的就是它
+    // X..X
+    // XX.X
+    // X.XX
+    // X..X
+    // X..X
+    dict.insert('N', vec![0b00011111, 0b00000010, 0b00000100, 0b00011111]);
     dict.insert('O', vec![0b00001110, 0b00010001, 0b00001110]);
     dict.insert('P', vec![0b00011111, 0b00000101, 0b00000010]);
     dict.insert('Q', vec![0b00001110, 0b00010001, 0b00011110]);
     dict.insert('R', vec![0b00011111, 0b00000101, 0b00011010]);
     dict.insert('S', vec![0b00010010, 0b00010101, 0b00001001]);
     dict.insert('T', vec![0b00000001, 0b00011111, 0b00000001]);
-    dict.insert('U', vec![0b00001111, 0b00010000, 0b00001111]);
+    // 🌟 [字体修复] 旧版 U 和 V 字模一模一样 (都是尖底)！
+    // U 改为方底 (两侧立柱到底 + 底边)，V 保持尖底，肉眼可分
+    dict.insert('U', vec![0b00011111, 0b00010000, 0b00011111]);
     dict.insert('V', vec![0b00001111, 0b00010000, 0b00001111]);
     dict.insert('W', vec![0b00011111, 0b00001000, 0b00011111]);
     dict.insert('X', vec![0b00011011, 0b00000100, 0b00011011]);
@@ -78,6 +93,18 @@ pub static CHAR_DICT: Lazy<HashMap<char, Vec<u8>>> = Lazy::new(|| {
     
     // [新增] 百分号 '%' (CPU/Mem 显示需要)
     dict.insert('%', vec![0b00011001, 0b00001000, 0b00010011]);
+
+    // 🌟 [补齐缺失字符] 以前这些字符不在字模表里，遇到会直接“凭空消失”
+    // '?' — 错误提示 (如 NIC 状态未知) 会用到
+    // XXX
+    // ..X
+    // .X.
+    // ...
+    // .X.
+    dict.insert('?', vec![0b00000001, 0b00010101, 0b00000011]);
+    // '(' 与 ')' — 错误码 (如 W:Err(U)) 会用到
+    dict.insert('(', vec![0b00001110, 0b00010001]);
+    dict.insert(')', vec![0b00010001, 0b00001110]);
 
     // --- Weather Icons (已根据 W 字形翻转：Bit0=上, Bit4=下) ---
 
@@ -161,6 +188,11 @@ pub static CHAR_DICT: Lazy<HashMap<char, Vec<u8>>> = Lazy::new(|| {
     // 5. 雪 (Snow) - 飘落
     dict.insert('❄', vec![0b00010101, 0b00001110, 0b00011111, 0b00001110, 0b00010101]);
     dict.insert('❅', vec![0b00001010, 0b00010001, 0b00001110, 0b00010001, 0b00001010]);
-    
+
+    // 🌟 [修复] 6. 雾 (Fog) — wttr / open-meteo 会返回这个图标，
+    // 以前不在字模表里，导致雾天时天气图标直接消失
+    // 两条错开的横线，模拟雾气弥漫
+    dict.insert('🌫', vec![0b00001010, 0b00001010, 0b00001010, 0b00001010, 0b00001010]);
+
     dict
 });

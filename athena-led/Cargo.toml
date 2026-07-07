@@ -1,6 +1,6 @@
 [package]
 name = "athena-led"
-version = "2.2.4"
+version = "2.3.1"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -15,7 +15,8 @@ panic = "abort"   # 遇到严重错误直接退出，不保留庞大的堆栈展
 # ==========================================
 # 🟢 全平台通用依赖 (Windows/Linux 都能跑)
 # ==========================================
-tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "time", "signal"] }
+# 🌟 net feature: 新增 ping 模块 (TCP 连接测延迟) 需要 tokio::net
+tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "time", "signal", "net"] }
 reqwest = { version = "0.11.20", features = ["json", "rustls-tls"], default-features = false }
 chrono = { version = "0.4.31", default-features = false, features = ["serde", "clock", "std"] }
 anyhow = "1.0.75"
@@ -29,6 +30,10 @@ regex = "1"
 # 🐧 Linux 专属依赖 (编译给路由器时才用到)
 # ==========================================
 [target.'cfg(unix)'.dependencies]
+# sysfs 后端 (老内核回退用；内核已废弃 sysfs GPIO，仅作兼容)
 sysfs_gpio = "0.6.1"
+# 🌟 字符设备后端 (/dev/gpiochipN，现代内核标准接口，优先使用)
+# 同时启用 uapi v1/v2：v1 兼容 4.x 老内核 (QSDK)，v2 用于 5.10+
+gpiocdev = { version = "0.7", features = ["uapi_v1", "uapi_v2"] }
 
 

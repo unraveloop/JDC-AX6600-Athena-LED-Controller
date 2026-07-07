@@ -21,11 +21,45 @@ o = s:option(ListValue, "light_level", translate("Brightness Level"))
 o.default = "5"
 for i = 0, 7 do o:value(tostring(i), tostring(i)) end
 
+-- 🌟 [v2.3.1] 定时亮度: 夜间自动降低亮度 (不熄屏)
+o = s:option(Flag, "night_light_enable", translate("Night Brightness"))
+o.default = "0"
+o.rmempty = false
+
+o = s:option(ListValue, "night_light_level", translate("Night Brightness Level"))
+o.default = "1"
+for i = 0, 7 do o:value(tostring(i), tostring(i)) end
+o:depends("night_light_enable", "1")
+
+o = s:option(Value, "night_start", translate("Dim Start Time"))
+o.placeholder = "22:00"
+o:depends("night_light_enable", "1")
+
+o = s:option(Value, "night_end", translate("Dim End Time"))
+o.placeholder = "07:00"
+o:depends("night_light_enable", "1")
+
 -- 物理按键 GPIO 绑定
 o = s:option(Value, "button_gpio", translate("Physical Button GPIO"))
 o.default = "71"
 o.datatype = "uinteger"
 o.description = translate("GPIO pin number for the physical screen button. Default is 71 for JDCloud AX6600. Run 'find_button' in SSH to detect if unsure.")
+
+-- 🌟 GPIO 后端 (v2.3.0 新增: cdev 字符设备优先, sysfs 兜底)
+o = s:option(ListValue, "gpio_backend", translate("GPIO Backend"))
+o.default = "auto"
+o:value("auto", translate("Auto (cdev first, sysfs fallback)"))
+o:value("cdev", translate("Character device (/dev/gpiochipN)"))
+o:value("sysfs", translate("Legacy sysfs"))
+
+-- 🌟 GPIO 基址 (兼容 QWRT / iStoreOS 等不同内核的固件)
+o = s:option(Value, "gpio_base", translate("GPIO Base Address"))
+o.default = "auto"
+o:value("auto", translate("Auto Detect (Recommended)"))
+o:value("512", "512 (Kernel 6.1+)")
+o:value("432", "432 (Kernel 5.x)")
+o:value("0", "0 (Legacy Kernel)")
+o.description = translate("Base number of the main gpiochip. Keep 'auto' unless the screen stays dark. Check with: ls /sys/class/gpio/")
 
 -- 🌟 核心模式切换开关
 o = s:option(ListValue, "profile_mode", translate("Button & Profile Mode"))
@@ -75,6 +109,11 @@ local function add_module_options(opt)
     opt:value("banner", translate("📝 Custom Text"))
     opt:value("http_custom", translate("🔗 HTTP API"))
     opt:value("stock", translate("📈 Stock Trend"))
+
+    -- 🌟 [v2.3.0 新增] 实用工具模块
+    opt:value("countdown", translate("📆 Countdown (D-Day)"))
+    opt:value("ping", translate("🛰️ Network Latency"))
+    opt:value("conn", translate("🔗 Connection Count"))
 
     -- 🌟 [新增] 5. 动画播放
     opt:value("anim", translate("🎬 Animation (.bin)"))

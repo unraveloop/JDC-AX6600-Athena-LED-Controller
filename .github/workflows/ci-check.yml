@@ -1,0 +1,46 @@
+# 🌟 [v2.3.1 新增] PR/push 级快速检查
+# 以前只有发 Release 才会编译验证，平时推代码零防护。
+# 本工作流对 Rust 核心做 cargo check (门禁) + clippy (仅提示不拦截)，
+# 用 apt 的 aarch64 gcc 交叉编译 ring 的 C 代码 (与 Dockerfile 同款方案)。
+name: CI Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: cargo check + clippy (aarch64-musl)
+    runs-on: ubuntu-latest
+    env:
+      # ring 等含 C 代码的依赖需要目标平台 C 编译器
+      CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross C compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+          components: clippy
+
+      # 缓存依赖编译产物，二次运行 ~1 分钟内完成
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: athena-led
+
+      # 🚦 门禁: 编译检查失败则拒绝合并
+      - name: cargo check
+        working-directory: ./athena-led
+        run: cargo check --target aarch64-unknown-linux-musl
+
+      # 📋 提示: clippy 警告仅展示，不作为门禁 (存量代码先不清零)
+      - name: cargo clippy (non-blocking)
+        working-directory: ./athena-led
+        run: cargo clippy --target aarch64-unknown-linux-musl || true

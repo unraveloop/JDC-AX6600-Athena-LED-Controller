@@ -16,21 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. 自动查找 Makefile 读取版本号
+      # 1. 读取版本号 (🌟 拆包后仓库里有两个 Makefile，固定从 athena-led/Makefile 读，
+      #    避免 find 顺序不确定；两个包的 PKG_VERSION 必须保持一致)
       - name: Get Version
         id: version
         run: |
-          # 查找名为 Makefile 的文件，且内容包含 PKG_VERSION
-          MAKEFILE_PATH=$(find . -name "Makefile" -print0 | xargs -0 grep -l "PKG_VERSION:=" | head -n 1)
-          
-          if [ -z "$MAKEFILE_PATH" ]; then
-            echo "⚠️ Makefile not found, using default version 1.0.0"
+          MAKEFILE_PATH="athena-led/Makefile"
+
+          if [ ! -f "$MAKEFILE_PATH" ]; then
+            echo "⚠️ $MAKEFILE_PATH not found, using default version 1.0.0"
             PKG_VERSION="1.0.0"
           else
             PKG_VERSION=$(grep "PKG_VERSION:=" "$MAKEFILE_PATH" | cut -d"=" -f2 | tr -d '[:space:]')
             echo "✅ Found version $PKG_VERSION in $MAKEFILE_PATH"
           fi
-          
+
           echo "VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
 
       # 2. 准备 Rust 环境
@@ -62,18 +62,25 @@ jobs:
           
           mkdir -p dist
           cp target/aarch64-unknown-linux-musl/release/athena-led dist/
-          
+
           cd dist
           tar -czvf ../$FILENAME athena-led
-          
+          cd ..
+
+          # 🌟 [v2.3.1] 生成校验和，供用户验证下载完整性
+          sha256sum $FILENAME > $FILENAME.sha256
+          cat $FILENAME.sha256
+
           echo "ASSET_NAME=$FILENAME" >> $GITHUB_OUTPUT
           echo "✅ Packed binary: $FILENAME"
 
-      # 6. 上传 Rust 二进制 (会自动上传上面生成的长文件名文件)
+      # 6. 上传 Rust 二进制 + 校验和
       - name: Upload Rust Binary to Release
         uses: softprops/action-gh-release@v1
         with:
-          files: athena-led/*.tar.gz
+          files: |
+            athena-led/*.tar.gz
+            athena-led/*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -144,35 +151,51 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Compile Package
+      - name: Compile Packages
         working-directory: ./sdk
         run: |
-          # 1. 查找真正的插件目录（排除 sdk 目录本身）
-          LUCI_SRC=$(find $GITHUB_WORKSPACE -maxdepth 2 -type d -name "luci-app-athena-led" | grep -v "sdk" | head -n 1)
-          
-          if [ -z "$LUCI_SRC" ]; then
-             echo "❌ Error: Could not find 'luci-app-athena-led' directory!"
-             exit 1
-          fi
-          
-          # 2. 🚨 核心修复：使用物理复制代替软链接
-          mkdir -p package/luci-app-athena-led
-          cp -r "$LUCI_SRC"/* package/luci-app-athena-led/
-          
-          # 3. 🚨 核心修复：强制转为 Linux 换行符 (专治 Windows 换行符崩溃)
           sudo apt-get install -y dos2unix
-          find package/luci-app-athena-led -type f -exec dos2unix {} +
-          
-          # 4. 🚨 核心修复：移除会导致找不到密钥而崩溃的 CONFIG_SIGNED_PACKAGES
-          echo "CONFIG_PACKAGE_luci-app-athena-led=m" > .config
-          
+
+          # 🌟 [包拆分] v2.3.0 起编两个包:
+          #   athena-led          — 核心守护进程 (预编译二进制 + init + config + 动画)
+          #   luci-app-athena-led — 纯 Web 界面 (JS 架构, PKGARCH=all)
+          # 1. athena-led 核心包 (只拷 Makefile + files，不拷 Rust 源码/target)
+          mkdir -p package/athena-led
+          cp "$GITHUB_WORKSPACE/athena-led/Makefile" package/athena-led/
+          cp -r "$GITHUB_WORKSPACE/athena-led/files" package/athena-led/
+
+          # 2. luci-app 界面包 (物理复制代替软链接)
+          mkdir -p package/luci-app-athena-led
+          cp -r "$GITHUB_WORKSPACE/luci-app-athena-led"/* package/luci-app-athena-led/
+
+          # 3. 🚨 强制转为 Linux 换行符 (专治 Windows 换行符崩溃)；
+          #    排除二进制动画文件，防止 .bin 被 dos2unix 毁掉
+          find package/athena-led package/luci-app-athena-led -type f ! -name "*.bin" -exec dos2unix {} +
+
+          # 4. 🚨 移除会导致找不到密钥而崩溃的 CONFIG_SIGNED_PACKAGES
+          echo "CONFIG_PACKAGE_athena-led=m" > .config
+          echo "CONFIG_PACKAGE_luci-app-athena-led=m" >> .config
+
           make defconfig
-          make package/luci-app-athena-led/download V=s
+          make package/athena-led/download V=s
+          make package/athena-led/compile V=s -j$(nproc)
           make package/luci-app-athena-led/compile V=s -j$(nproc)
 
-      - name: Upload Package to Release
+      # 🌟 [v2.3.1] 生成安装包校验和 (按 ipk/apk 分文件，避免两个矩阵任务互相覆盖)
+      - name: Generate checksums
+        run: |
+          cd sdk/bin
+          find . -name "*athena-led*.${{ matrix.type }}" | while read f; do
+            sha256sum "$f"
+          done | sed 's# \./.*/# #' > sha256sums-${{ matrix.type }}.txt
+          cat sha256sums-${{ matrix.type }}.txt
+
+      - name: Upload Packages to Release
         uses: softprops/action-gh-release@v1
         with:
-          files: sdk/bin/**/luci-app-athena-led*.${{ matrix.type }}
+          # 通配 athena-led*.ipk 同时覆盖 athena-led 与 luci-app-athena-led 两个包
+          files: |
+            sdk/bin/**/*athena-led*.${{ matrix.type }}
+            sdk/bin/sha256sums-${{ matrix.type }}.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

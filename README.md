@@ -23,24 +23,26 @@
 
 请根据您的 OpenWrt 系统版本选择对应的安装方式，无需自行编译。
 
+> 🌟 **v2.3.0 起拆分为两个软件包**：`athena-led`(核心驱动) + `luci-app-athena-led`(Web 界面)，**两个都要装**。
+
 #### 🅰️ 方案一：OpenWrt 23.05 及旧版 (使用 `.ipk`)
 适用于大多数目前的稳定版固件。
 
-1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `luci-app-athena-led_*.ipk` 文件。
+1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `athena-led_*.ipk` 和 `luci-app-athena-led_*.ipk` 两个文件。
 2.  上传至路由器 `/tmp/` 目录。
 3.  执行安装命令：
     ```bash
-    opkg install /tmp/luci-app-athena-led_*.ipk
+    opkg install /tmp/athena-led_*.ipk /tmp/luci-app-athena-led_*.ipk
     ```
 
 #### 🅱️ 方案二：OpenWrt 24.x / Snapshot (使用 `.apk`)
 适用于最新使用 `apk` 包管理器的固件。
 
-1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `luci-app-athena-led_*.apk` 文件。
+1.  前往 **[Releases (发行版)](../../releases)** 页面下载最新的 `athena-led_*.apk` 和 `luci-app-athena-led_*.apk` 两个文件。
 2.  上传至路由器 `/tmp/` 目录。
 3.  执行安装命令 (**必须添加 `--allow-untrusted` 参数**)：
     ```bash
-    apk add --allow-untrusted /tmp/luci-app-athena-led_*.apk
+    apk add --allow-untrusted /tmp/athena-led_*.apk /tmp/luci-app-athena-led_*.apk
     ```
 
 🎉 **配置**：安装完成后刷新网页，进入 **服务 (Services) -> Athena LED** 进行配置。

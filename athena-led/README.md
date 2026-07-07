@@ -64,7 +64,18 @@ athena-led [选项]
 | **基础设置** |  |  |  |
 | `--seconds <NUM>` | `5` | 每个模块显示的持续时间 (秒) | `seconds` |
 | `--light-level <NUM>` | `5` | 屏幕亮度等级 (0-7) | `light_level` |
+| `--night-start <HH:MM>` | `""` | 夜间低亮度时段开始 (空 = 关闭定时亮度) | `night_start` |
+| `--night-end <HH:MM>` | `""` | 夜间低亮度时段结束 (支持跨午夜) | `night_end` |
+| `--night-level <NUM>` | `1` | 夜间亮度等级 (0-7) | `night_level` |
 | `--display-order <STR>` | *(见下方)* | **关键参数**：模块显示顺序 (空格分隔) | `display_order` |
+| **硬件兼容** |  |  |  |
+| `--gpio-backend <STR>` | `auto` | GPIO 后端。`auto`=优先 `/dev/gpiochipN` 字符设备、失败回退 sysfs；`cdev`/`sysfs`=强制指定 | `gpio_backend` |
+| `--gpio-base <STR>` | `auto` | GPIO 基址 (仅 sysfs 后端用)。`auto`=自动探测 gpiochip base (兼容 QWRT/iStoreOS 等固件)；也可强制指定 `512`(内核6.1+) / `432`(内核5.x) / `0`(老内核) | `gpio_base` |
+| `--button-gpio <NUM>` | `71` | 物理按键的 TLMM 引脚偏移 | `button_gpio` |
+| **新功能模块 (v2.3.0)** |  |  |  |
+| `countdown:<日期>` | - | 倒数日模块。`countdown:2027-06-07`(一次性) 或 `countdown:01-01`(每年循环)，显示 `D-123` | - |
+| `ping:<host[:port]>` | - | 网络延迟模块 (TCP 连接耗时)。留空默认阿里 DNS，显示 `P:23ms` | - |
+| `conn` | - | 连接数模块 (nf_conntrack)，显示 `CT:1234` | - |
 | **网络与系统** |  |  |  |
 | `--net-interface <STR>` | `br-lan` | 用于检测网速的网络接口名称 | `net_interface` |
 | `--ip-url <URL>` | *(见代码)* | 用于查询 WAN IP 的 API 地址 | `ip_url` |
